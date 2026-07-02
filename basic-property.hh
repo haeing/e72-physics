@@ -52,6 +52,24 @@ static const double K_tau = 1.238e-8;
 static const double Rbeam = 0.69;
 
 // ============================================================
+// Target properties (density : g/cm3, thickness : mm)
+// ============================================================
+static const double lh2_density = 0.07085;
+static const double gfrp_density = 1.9;
+static const double kapton_density = 1.42;
+static const double mylar_density = 1.4;
+
+static const double lh2_thick = 80;
+static const double gfrp_thick = 1.5;
+static const double kapton_thick = 0.25;
+static const double mylar_thick = 0.05;
+
+static const int lh2_layer = 1;
+static const int gfrp_layer = 2;
+static const int kapton_layer = 2;
+static const int mylar_layer = 4;
+
+// ============================================================
 // Useful conversion functions
 // target p at rest, K- beam in lab
 // ============================================================
