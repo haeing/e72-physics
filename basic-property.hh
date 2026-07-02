@@ -22,6 +22,7 @@ static const double mpi0     = 134.9768;
 // Particle properties
 // ============================================================
 const double tauK = 1.238e-8;      // s
+const double br_L = 0.64;
 
 // ============================================================
 // Beam intensity / running condition
@@ -59,7 +60,9 @@ static const double gfrp_density = 1.9;
 static const double kapton_density = 1.42;
 static const double mylar_density = 1.4;
 
-static const double lh2_thick = 80;
+//static const double lh2_thick = 80;
+static const double lh2_thick = 71.39;
+
 static const double gfrp_thick = 1.5;
 static const double kapton_thick = 0.25;
 static const double mylar_thick = 0.05;
@@ -68,6 +71,12 @@ static const int lh2_layer = 1;
 static const int gfrp_layer = 2;
 static const int kapton_layer = 2;
 static const int mylar_layer = 4;
+
+static const double N_A = 6.022 * 1e23; //mol-1
+static const double lh2_W = 1.008; //atomic mass
+static const double gfrp_W = 20.;
+static const double kapton_W = 12.8;
+static const double mylar_W = 12.5;
 
 // ============================================================
 // Useful conversion functions

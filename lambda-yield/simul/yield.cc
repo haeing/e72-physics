@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <utility>
 #include <cmath>
+#include <iomanip>
 
 
 #include <TFile.h>
@@ -19,11 +20,19 @@
 #include <TLegend.h>
 #include <TStyle.h>
 
+#include "../../basic-property.hh"
+
 using namespace std;
 
-const int runnumber = 2447;
+const vector<int> runnumbers = {2447, 2449, 2450, 2451, 2452, 2453, 2454, 2456, 2457, 2458, 2459, 2460};
 
 struct ScalerInfo {
+    Long64_t trigD;
+    double daqEff;
+};
+
+struct CombinedScalerInfo {
+    vector<int> runnumbers;
     Long64_t trigD;
     double daqEff;
 };
@@ -61,6 +70,18 @@ struct BeamSpectrum {
     vector<double> binCenter;
     vector<double> binRaw;
     vector<double> binScaled;
+};
+
+struct YieldEstimateInfo {
+    string reactionName;
+    vector<double> binLow;
+    vector<double> binHigh;
+    vector<double> binCenter;
+    vector<double> nBeam;
+    vector<double> crossSectionMb;
+    vector<double> geomEff;
+    vector<double> yield;
+    double totalYield;
 };
 
 ScalerInfo GetScalerInfo(int runnumber)
@@ -111,6 +132,52 @@ ScalerInfo GetScalerInfo(int runnumber)
         cerr << "DAQ-Eff not found in " << scaler_file << endl;
 
     return {trigD, daqEff};
+}
+
+double NormalizeScalerEfficiency(double eff)
+{
+    if (eff > 1.0)
+        return eff / 100.0;
+    return eff;
+}
+
+CombinedScalerInfo GetCombinedScalerInfo(const vector<int>& runs)
+{
+    CombinedScalerInfo combined;
+    combined.runnumbers = runs;
+    combined.trigD = 0;
+    combined.daqEff = 0.0;
+
+    double weightedDaqEff = 0.0;
+
+    cout << "runs : ";
+    for (size_t i = 0; i < runs.size(); ++i) {
+        if (i > 0)
+            cout << ", ";
+        cout << runs[i];
+    }
+    cout << endl;
+
+    for (int run : runs) {
+        ScalerInfo scaler = GetScalerInfo(run);
+        if (scaler.trigD <= 0 || scaler.daqEff < 0.0) {
+            cerr << "Skip run " << run << " because scaler info is invalid" << endl;
+            continue;
+        }
+
+        double daqEff = NormalizeScalerEfficiency(scaler.daqEff);
+        combined.trigD += scaler.trigD;
+        weightedDaqEff += scaler.trigD * daqEff;
+
+        cout << "  run " << run
+             << " TRIG-D : " << scaler.trigD
+             << ", DAQ-Eff : " << daqEff << endl;
+    }
+
+    if (combined.trigD > 0)
+        combined.daqEff = weightedDaqEff / combined.trigD;
+
+    return combined;
 }
 TGraph *LoadCrossSectionGraph(TFile *file, const string& graph_name)
 {
@@ -417,6 +484,98 @@ TGraphErrors *MakeCrossSectionGraph(const TriggerAcceptanceInfo& info, const cha
     return graph;
 }
 
+double NormalizeEfficiency(double eff)
+{
+    if (eff > 1.0)
+        return eff / 100.0;
+    return eff;
+}
+
+double GetLH2TargetArealDensity()
+{
+    const double mmtocm = 0.1;
+    return lh2_density * N_A * lh2_thick * mmtocm * lh2_layer / lh2_W;
+}
+
+YieldEstimateInfo EstimateLambdaYield(const TriggerAcceptanceInfo& info,
+                                      const BeamSpectrum& beam,
+                                      double targetArealDensity,
+                                      double daqEff,
+                                      double branchingFraction)
+{
+    YieldEstimateInfo result;
+    result.reactionName = info.reactionName;
+    result.binLow = info.binLow;
+    result.binHigh = info.binHigh;
+    result.binCenter = info.binCenter;
+    result.totalYield = 0.0;
+
+    const double mbToCm2 = 1.0e-27;
+    const double daqEffNorm = NormalizeEfficiency(daqEff);
+
+    for (size_t i = 0; i < info.binCenter.size(); ++i) {
+        double nBeam = (i < beam.binScaled.size()) ? beam.binScaled[i] : 0.0;
+        double sigmaMb = info.binCrossSection[i];
+        double geomEff = info.binAcc[i] / 100.0;
+        double binYield = nBeam * targetArealDensity * sigmaMb * mbToCm2 *
+                          geomEff * daqEffNorm * branchingFraction;
+
+        result.nBeam.push_back(nBeam);
+        result.crossSectionMb.push_back(sigmaMb);
+        result.geomEff.push_back(geomEff);
+        result.yield.push_back(binYield);
+        result.totalYield += binYield;
+    }
+
+    return result;
+}
+
+TH1D *MakeYieldHist(const YieldEstimateInfo& info, const char *name, const char *title)
+{
+    const int nBins = info.binLow.size();
+    vector<double> edges;
+    for (int i = 0; i < nBins; ++i)
+        edges.push_back(info.binLow[i]);
+    edges.push_back(info.binHigh.back());
+
+    TH1D *hist = new TH1D(name, title, nBins, edges.data());
+    hist->SetDirectory(nullptr);
+    for (int i = 0; i < nBins; ++i)
+        hist->SetBinContent(i + 1, info.yield[i]);
+    return hist;
+}
+
+void PrintYieldTable(const vector<YieldEstimateInfo>& yieldInfos,
+                     double targetArealDensity,
+                     double daqEff,
+                     double branchingFraction)
+{
+    cout << fixed << setprecision(6);
+    cout << "LH2 target areal density [/cm2] : " << scientific
+         << targetArealDensity << fixed << endl;
+    cout << "DAQ efficiency : " << NormalizeEfficiency(daqEff)
+         << ", Lambda branching fraction : " << branchingFraction << endl;
+
+    for (const auto& info : yieldInfos) {
+        cout << "\n[" << info.reactionName << "] expected Lambda yield" << endl;
+        cout << "bin [MeV/c]"
+             << setw(16) << "Nbeam"
+             << setw(14) << "sigma[mb]"
+             << setw(14) << "geomEff"
+             << setw(16) << "yield" << endl;
+
+        for (size_t i = 0; i < info.binCenter.size(); ++i) {
+            cout << setw(4) << static_cast<int>(info.binLow[i]) << "-"
+                 << setw(3) << static_cast<int>(info.binHigh[i])
+                 << setw(16) << setprecision(2) << info.nBeam[i]
+                 << setw(14) << setprecision(6) << info.crossSectionMb[i]
+                 << setw(14) << setprecision(6) << info.geomEff[i]
+                 << setw(16) << setprecision(6) << info.yield[i] << endl;
+        }
+        cout << "total yield : " << setprecision(6) << info.totalYield << endl;
+    }
+}
+
 
 
 void DrawBeamPage(const BeamSpectrum& beam, TCanvas *c, const string& pdf_file)
@@ -441,14 +600,42 @@ void DrawBeamPage(const BeamSpectrum& beam, TCanvas *c, const string& pdf_file)
     delete leg;
 }
 
-void DrawTriggerAcceptancePdf(const vector<TriggerAcceptanceInfo>& infos, const BeamSpectrum& beam, const string& pdf_file)
+void DrawYieldPage(const YieldEstimateInfo& yieldInfo, TCanvas *c, const string& pdf_file)
+{
+    c->Clear();
+    c->Divide(1, 1);
+    c->cd(1);
+
+    TH1D *hYield = MakeYieldHist(yieldInfo,
+                                 Form("h_yield_%s", yieldInfo.reactionName.c_str()),
+                                 Form("%s;K^{-} momentum [MeV/#it{c}];Expected #Lambda yield",
+                                      yieldInfo.reactionName.c_str()));
+    hYield->SetLineColor(kViolet + 2);
+    hYield->SetLineWidth(2);
+    hYield->SetFillColor(kViolet - 9);
+    hYield->Draw("hist");
+
+    TLegend *leg = new TLegend(0.62, 0.78, 0.88, 0.88);
+    leg->AddEntry(hYield, "beam #times target #times #sigma #times eff. #times BR", "f");
+    leg->Draw();
+
+    c->Print(pdf_file.c_str());
+    delete hYield;
+    delete leg;
+}
+
+void DrawTriggerAcceptancePdf(const vector<TriggerAcceptanceInfo>& infos,
+                              const BeamSpectrum& beam,
+                              const vector<YieldEstimateInfo>& yieldInfos,
+                              const string& pdf_file)
 {
     TCanvas *c = new TCanvas("c_yield", "yield", 900, 1100);
     c->Print((pdf_file + "[").c_str());
 
     DrawBeamPage(beam, c, pdf_file);
 
-    for (const auto& info : infos) {
+    for (size_t i = 0; i < infos.size(); ++i) {
+        const auto& info = infos[i];
         c->Clear();
         c->Divide(1, 3);
 
@@ -494,6 +681,9 @@ void DrawTriggerAcceptancePdf(const vector<TriggerAcceptanceInfo>& infos, const 
         delete leg;
         delete gAcc;
         delete gXsec;
+
+        if (i < yieldInfos.size())
+            DrawYieldPage(yieldInfos[i], c, pdf_file);
     }
 
     c->Print((pdf_file + "]").c_str());
@@ -504,11 +694,17 @@ void yield(){
   gROOT->SetBatch(kTRUE);
   gStyle->SetOptStat(0);
   
-  ScalerInfo scaler = GetScalerInfo(runnumber);
+  CombinedScalerInfo scaler = GetCombinedScalerInfo(runnumbers);
   Long64_t nKbeam = scaler.trigD;
   double daqEff = scaler.daqEff;
 
-  cout << "nkbeam : " << nKbeam << ", daqEff : " << daqEff << endl;
+  if (nKbeam <= 0 || daqEff <= 0.0) {
+      cerr << "No valid scaler information for requested runs" << endl;
+      return;
+  }
+
+  cout << "combined nkbeam : " << nKbeam
+       << ", weighted daqEff : " << daqEff << endl;
 
   string sim_dir = "/home/had/haein/simul-data/e72-lambda-yield";
   string beam_file = sim_dir + "/beam_735_beam.root";
@@ -540,7 +736,7 @@ void yield(){
 
   TGraph *gLambdaEtaXsec = LoadCrossSectionGraph(fxsec, "g_Lambda_eta_pK");
   TGraph *gLambdaPiXsec = LoadCrossSectionGraph(fxsec, "g_Lambda_pi0_pK");
-  TGraph *gSigmaPiXsec = LoadCrossSectionGraph(fxsec, "g_Sigmam_pip_pK");
+  TGraph *gSigmaPiXsec = LoadCrossSectionGraph(fxsec, "g_Sigma0_pi0_pK");
 
   TriggerAcceptanceInfo lambdaEtaAcc = GetTriggerAcceptance("Lambda_eta",
                                                             sim_dir + "/e72_lambda_yield_lambda_eta.root",
@@ -552,9 +748,9 @@ void yield(){
                                                            "g_Lambda_pi0_pK",
                                                            gLambdaPiXsec,
                                                            momBins);
-  TriggerAcceptanceInfo sigmaPiAcc = GetTriggerAcceptance("Sigma-_pi+",
+  TriggerAcceptanceInfo sigmaPiAcc = GetTriggerAcceptance("Sigma0_pi0",
                                                           sim_dir + "/e72_lambda_yield_sigma_pi.root",
-                                                          "g_Sigmam_pip_pK",
+                                                          "g_Sigma0_pi0_pK",
                                                           gSigmaPiXsec,
                                                           momBins);
 
@@ -579,8 +775,23 @@ void yield(){
   double geomAccSigmaPi = nTrigDenSigmaPi > 0 ? 100.0 * nTrigNumSigmaPi / nTrigDenSigmaPi : 0.0;
 
   
+  double mmtocm = 0.1;
+  double N_lh2 = GetLH2TargetArealDensity();
+  double N_gfrp = gfrp_density*N_A*gfrp_thick*mmtocm*gfrp_layer/gfrp_W;
+  double N_kapton = kapton_density*N_A*kapton_thick*mmtocm*kapton_layer/kapton_W;
+  double N_mylar = mylar_density*N_A*mylar_thick*mmtocm*mylar_layer/mylar_W;
+
+  double N_target_total = N_lh2+N_gfrp+N_kapton+N_mylar;
+  cout << "LH2 target : " << N_lh2
+       << ", material total reference : " << N_target_total << endl;
+
   vector<TriggerAcceptanceInfo> accInfos = {lambdaEtaAcc, lambdaPiAcc, sigmaPiAcc};
-  DrawTriggerAcceptancePdf(accInfos, beamSpectrum, "yield.pdf");
+  vector<YieldEstimateInfo> yieldInfos;
+  for (const auto& info : accInfos)
+      yieldInfos.push_back(EstimateLambdaYield(info, beamSpectrum, N_lh2, daqEff, br_L));
+
+  PrintYieldTable(yieldInfos, N_lh2, daqEff, br_L);
+  DrawTriggerAcceptancePdf(accInfos, beamSpectrum, yieldInfos, "yield.pdf");
 
   fxsec->Close();
 
