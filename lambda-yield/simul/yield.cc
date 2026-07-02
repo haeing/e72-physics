@@ -494,6 +494,20 @@ double NormalizeEfficiency(double eff)
     return eff;
 }
 
+void PrintCountWithUnits(const string& label, double value)
+{
+    ios::fmtflags oldFlags = cout.flags();
+    streamsize oldPrecision = cout.precision();
+
+    cout << label << " : "
+         << scientific << setprecision(6) << value
+         << fixed << setprecision(6) << " (" << value / 1.0e6 << " M)"
+         << endl;
+
+    cout.flags(oldFlags);
+    cout.precision(oldPrecision);
+}
+
 double GetLH2TargetArealDensity()
 {
     const double mmtocm = 0.1;
@@ -610,7 +624,7 @@ void PrintYieldTable(const vector<YieldEstimateInfo>& yieldInfos,
             }
             cout << setw(16) << setprecision(6) << info.yield[i] << endl;
         }
-        cout << "total yield : " << setprecision(6) << info.totalYield << endl;
+        PrintCountWithUnits("total yield", info.totalYield);
     }
 }
 
@@ -751,6 +765,7 @@ void yield(){
 
   cout << "combined nkbeam : " << nKbeam
        << ", weighted daqEff : " << daqEff << endl;
+  PrintCountWithUnits("number of total K- beam", static_cast<double>(nKbeam));
 
   string sim_dir = "/home/had/haein/simul-data/e72-lambda-yield";
   string beam_file = sim_dir + "/beam_735_beam.root";
@@ -828,8 +843,8 @@ void yield(){
   double N_mylar = mylar_density*N_A*mylar_thick*mmtocm*mylar_layer/mylar_W;
 
   double N_target_total = N_lh2+N_gfrp+N_kapton+N_mylar;
-  cout << "LH2 target : " << N_lh2
-       << ", total target used for yield : " << N_target_total << endl;
+  PrintCountWithUnits("number of LH2 target", N_lh2);
+  PrintCountWithUnits("number of total target used for yield", N_target_total);
 
   vector<TriggerAcceptanceInfo> accInfos = {lambdaEtaAcc, lambdaPiAcc, sigmaPiAcc};
   vector<YieldEstimateInfo> yieldInfos;
