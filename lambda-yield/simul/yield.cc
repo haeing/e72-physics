@@ -14,6 +14,7 @@
 #include <TCanvas.h>
 #include <TGraph.h>
 #include <TGraphErrors.h>
+#include <TGaxis.h>
 #include <TObject.h>
 #include <TROOT.h>
 #include <TH1D.h>
@@ -23,6 +24,8 @@
 #include "../../basic-property.hh"
 
 using namespace std;
+
+const double br_Sigma0_to_Lambda = 1.0;
 
 const vector<int> runnumbers = {2447, 2449, 2450, 2451, 2452, 2453, 2454, 2456, 2457, 2458, 2459, 2460};
 
@@ -530,6 +533,35 @@ YieldEstimateInfo EstimateLambdaYield(const TriggerAcceptanceInfo& info,
     return result;
 }
 
+YieldEstimateInfo SumYieldInfos(const vector<YieldEstimateInfo>& yieldInfos,
+                                const string& name)
+{
+    YieldEstimateInfo total;
+    total.reactionName = name;
+    total.totalYield = 0.0;
+
+    if (yieldInfos.empty())
+        return total;
+
+    const auto& first = yieldInfos.front();
+    total.binLow = first.binLow;
+    total.binHigh = first.binHigh;
+    total.binCenter = first.binCenter;
+    total.nBeam = first.nBeam;
+    total.crossSectionMb.assign(first.binCenter.size(), 0.0);
+    total.geomEff.assign(first.binCenter.size(), 0.0);
+    total.yield.assign(first.binCenter.size(), 0.0);
+
+    for (const auto& info : yieldInfos) {
+        for (size_t i = 0; i < total.yield.size() && i < info.yield.size(); ++i) {
+            total.yield[i] += info.yield[i];
+            total.totalYield += info.yield[i];
+        }
+    }
+
+    return total;
+}
+
 TH1D *MakeYieldHist(const YieldEstimateInfo& info, const char *name, const char *title)
 {
     const int nBins = info.binLow.size();
@@ -551,13 +583,14 @@ void PrintYieldTable(const vector<YieldEstimateInfo>& yieldInfos,
                      double branchingFraction)
 {
     cout << fixed << setprecision(6);
-    cout << "LH2 target areal density [/cm2] : " << scientific
+    cout << "target areal density used [/cm2] : " << scientific
          << targetArealDensity << fixed << endl;
     cout << "DAQ efficiency : " << NormalizeEfficiency(daqEff)
          << ", Lambda branching fraction : " << branchingFraction << endl;
 
     for (const auto& info : yieldInfos) {
         cout << "\n[" << info.reactionName << "] expected Lambda yield" << endl;
+        bool isTotal = info.reactionName == "Total";
         cout << "bin [MeV/c]"
              << setw(16) << "Nbeam"
              << setw(14) << "sigma[mb]"
@@ -567,10 +600,15 @@ void PrintYieldTable(const vector<YieldEstimateInfo>& yieldInfos,
         for (size_t i = 0; i < info.binCenter.size(); ++i) {
             cout << setw(4) << static_cast<int>(info.binLow[i]) << "-"
                  << setw(3) << static_cast<int>(info.binHigh[i])
-                 << setw(16) << setprecision(2) << info.nBeam[i]
-                 << setw(14) << setprecision(6) << info.crossSectionMb[i]
-                 << setw(14) << setprecision(6) << info.geomEff[i]
-                 << setw(16) << setprecision(6) << info.yield[i] << endl;
+                 << setw(16) << setprecision(2) << info.nBeam[i];
+            if (isTotal) {
+                cout << setw(14) << "-"
+                     << setw(14) << "-";
+            } else {
+                cout << setw(14) << setprecision(6) << info.crossSectionMb[i]
+                     << setw(14) << setprecision(6) << info.geomEff[i];
+            }
+            cout << setw(16) << setprecision(6) << info.yield[i] << endl;
         }
         cout << "total yield : " << setprecision(6) << info.totalYield << endl;
     }
@@ -580,6 +618,7 @@ void PrintYieldTable(const vector<YieldEstimateInfo>& yieldInfos,
 
 void DrawBeamPage(const BeamSpectrum& beam, TCanvas *c, const string& pdf_file)
 {
+    c->SetCanvasSize(900, 1100);
     c->Clear();
     c->Divide(1, 1);
     c->cd(1);
@@ -591,7 +630,7 @@ void DrawBeamPage(const BeamSpectrum& beam, TCanvas *c, const string& pdf_file)
     hBeam->SetFillColor(0);
     hBeam->Draw("hist");
 
-    TLegend *leg = new TLegend(0.62, 0.78, 0.88, 0.88);
+    TLegend *leg = new TLegend(0.62, 0.78, 0.80, 0.88);
     leg->AddEntry(hBeam, "beam spectrum scaled to TRIG-D", "l");
     leg->Draw();
 
@@ -602,6 +641,7 @@ void DrawBeamPage(const BeamSpectrum& beam, TCanvas *c, const string& pdf_file)
 
 void DrawYieldPage(const YieldEstimateInfo& yieldInfo, TCanvas *c, const string& pdf_file)
 {
+    c->SetCanvasSize(850, 850);
     c->Clear();
     c->Divide(1, 1);
     c->cd(1);
@@ -613,13 +653,15 @@ void DrawYieldPage(const YieldEstimateInfo& yieldInfo, TCanvas *c, const string&
     hYield->SetLineColor(kViolet + 2);
     hYield->SetLineWidth(2);
     hYield->SetFillColor(kViolet - 9);
+    TGaxis::SetMaxDigits(3);
     hYield->Draw("hist");
 
-    TLegend *leg = new TLegend(0.62, 0.78, 0.88, 0.88);
+    TLegend *leg = new TLegend(0.62, 0.78, 0.80, 0.88);
     leg->AddEntry(hYield, "beam #times target #times #sigma #times eff. #times BR", "f");
     leg->Draw();
 
     c->Print(pdf_file.c_str());
+    TGaxis::SetMaxDigits(5);
     delete hYield;
     delete leg;
 }
@@ -636,6 +678,7 @@ void DrawTriggerAcceptancePdf(const vector<TriggerAcceptanceInfo>& infos,
 
     for (size_t i = 0; i < infos.size(); ++i) {
         const auto& info = infos[i];
+        c->SetCanvasSize(900, 1100);
         c->Clear();
         c->Divide(1, 3);
 
@@ -652,7 +695,7 @@ void DrawTriggerAcceptancePdf(const vector<TriggerAcceptanceInfo>& infos,
         hDen->SetLineColor(kBlue + 1);
         hDen->SetFillColor(kAzure - 9);
         hDen->Draw("hist same");
-        TLegend *leg = new TLegend(0.62, 0.72, 0.88, 0.88);
+        TLegend *leg = new TLegend(0.62, 0.72, 0.80, 0.88);
         leg->AddEntry(hEntry, "simulation entries", "l");
         leg->AddEntry(hDen, "physics trigger denominator", "f");
         leg->Draw();
@@ -685,6 +728,9 @@ void DrawTriggerAcceptancePdf(const vector<TriggerAcceptanceInfo>& infos,
         if (i < yieldInfos.size())
             DrawYieldPage(yieldInfos[i], c, pdf_file);
     }
+
+    if (yieldInfos.size() > infos.size())
+        DrawYieldPage(yieldInfos.back(), c, pdf_file);
 
     c->Print((pdf_file + "]").c_str());
     delete c;
@@ -783,15 +829,20 @@ void yield(){
 
   double N_target_total = N_lh2+N_gfrp+N_kapton+N_mylar;
   cout << "LH2 target : " << N_lh2
-       << ", material total reference : " << N_target_total << endl;
+       << ", total target used for yield : " << N_target_total << endl;
 
   vector<TriggerAcceptanceInfo> accInfos = {lambdaEtaAcc, lambdaPiAcc, sigmaPiAcc};
   vector<YieldEstimateInfo> yieldInfos;
-  for (const auto& info : accInfos)
-      yieldInfos.push_back(EstimateLambdaYield(info, beamSpectrum, N_lh2, daqEff, br_L));
+  yieldInfos.push_back(EstimateLambdaYield(lambdaEtaAcc, beamSpectrum, N_target_total, daqEff, br_L));
+  yieldInfos.push_back(EstimateLambdaYield(lambdaPiAcc, beamSpectrum, N_target_total, daqEff, br_L));
+  yieldInfos.push_back(EstimateLambdaYield(sigmaPiAcc, beamSpectrum, N_target_total, daqEff,
+                                           br_L * br_Sigma0_to_Lambda));
+  yieldInfos.push_back(SumYieldInfos(yieldInfos, "Total"));
 
-  PrintYieldTable(yieldInfos, N_lh2, daqEff, br_L);
-  DrawTriggerAcceptancePdf(accInfos, beamSpectrum, yieldInfos, "yield.pdf");
+  cout << "Sigma0 -> Lambda gamma branching fraction : "
+       << br_Sigma0_to_Lambda << endl;
+  PrintYieldTable(yieldInfos, N_target_total, daqEff, br_L);
+  DrawTriggerAcceptancePdf(accInfos, beamSpectrum, yieldInfos, "simul/yield.pdf");
 
   fxsec->Close();
 
