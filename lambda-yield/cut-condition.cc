@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <string>
@@ -22,11 +23,13 @@
 using namespace std;
 
 const vector<int> runnumbers = {2447, 2449, 2450, 2451, 2452, 2453, 2454, 2456, 2457, 2458, 2459, 2460};
+//const vector<int> runnumbers = {2447};
 
 const double lambda_peak_min = 1.095; // GeV/c2
 const double lambda_peak_max = 1.125; // GeV/c2
 const double tight_close_dist = 5.;   // mm
 const double tight_chisqr = 2.;
+const int lambda_bkg_poly_order = 1; // choose 1, 2, or 3
 
 const double mass_pi = 0.13957039; // GeV/c2
 const double mass_p = 0.93827208;  // GeV/c2
@@ -76,21 +79,38 @@ YieldResult FitLambdaYield(TH1D *hist, const char *tag)
   if (!hist || hist->GetEntries() <= 0)
     return result;
 
-  const double fit_min = 1.085;
-  const double fit_max = 1.145;
+  const double fit_min = 1.08;
+  const double fit_max = 1.14;
+  const int bkg_order = max(1, min(3, lambda_bkg_poly_order));
+
+  string bkg_expr = "[3]";
+  string bkg_only_expr = "[0]";
+  for (int i = 1; i <= bkg_order; ++i) {
+    bkg_expr += Form(" + [%d]*TMath::Power(x,%d)", 3 + i, i);
+    bkg_only_expr += Form(" + [%d]*TMath::Power(x,%d)", i, i);
+  }
 
   TF1 *fit = new TF1(Form("fit_%s", tag),
-                     "[0]*TMath::Gaus(x,[1],[2],0) + [3] + [4]*x + [5]*x*x",
+                     ("[0]*TMath::Gaus(x,[1],[2],0) + " + bkg_expr).c_str(),
                      fit_min, fit_max);
-  fit->SetParNames("Amp", "Mean", "Sigma", "p0", "p1", "p2");
-  fit->SetParameters(hist->GetMaximum(), 1.115, 0.004, 100., -100., 10.);
+  fit->SetParName(0, "Amp");
+  fit->SetParName(1, "Mean");
+  fit->SetParName(2, "Sigma");
+  fit->SetParameter(0, hist->GetMaximum());
+  fit->SetParameter(1, 1.115);
+  fit->SetParameter(2, 0.004);
+  for (int i = 0; i <= bkg_order; ++i) {
+    fit->SetParName(3 + i, Form("p%d", i));
+    fit->SetParameter(3 + i, (i == 0) ? 100. : 0.);
+  }
   fit->SetParLimits(1, 1.108, 1.122);
   fit->SetParLimits(2, 0.001, 0.015);
 
   hist->Fit(fit, "R");
 
-  TF1 *bkg = new TF1(Form("bkg_%s", tag), "[0] + [1]*x + [2]*x*x", fit_min, fit_max);
-  bkg->SetParameters(fit->GetParameter(3), fit->GetParameter(4), fit->GetParameter(5));
+  TF1 *bkg = new TF1(Form("bkg_%s", tag), bkg_only_expr.c_str(), fit_min, fit_max);
+  for (int i = 0; i <= bkg_order; ++i)
+    bkg->SetParameter(i, fit->GetParameter(3 + i));
   bkg->SetLineColor(kGreen + 2);
   bkg->SetLineStyle(2);
   bkg->Draw("same");
@@ -115,7 +135,7 @@ YieldResult FitLambdaYield(TH1D *hist, const char *tag)
 
   TLegend *leg = new TLegend(0.55, 0.60, 0.80, 0.82);
   leg->AddEntry(hist, "Data", "l");
-  leg->AddEntry(fit, "Gaussian + pol2", "l");
+  leg->AddEntry(fit, Form("Gaussian + pol%d", bkg_order), "l");
   leg->AddEntry(sig, "Lambda peak", "l");
   leg->AddEntry(bkg, "Background", "l");
   leg->Draw();
@@ -128,6 +148,7 @@ YieldResult FitLambdaYield(TH1D *hist, const char *tag)
   lat.DrawLatex(0.55, 0.44, Form("#sigma = %.5f", result.sigma));
   lat.DrawLatex(0.55, 0.39, Form("Bkg = %.0f", result.background));
 
+  cout << tag << " Background polynomial order = " << bkg_order << endl;
   cout << tag << " Lambda mean  = " << result.mean << endl;
   cout << tag << " Lambda sigma = " << result.sigma << endl;
   cout << tag << " Signal yield = " << result.signal << endl;
