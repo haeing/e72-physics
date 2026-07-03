@@ -535,7 +535,7 @@ YieldEstimateInfo EstimateLambdaYield(const TriggerAcceptanceInfo& info,
         double sigmaMb = info.binCrossSection[i];
         double geomEff = info.binAcc[i] / 100.0;
         double binYield = nBeam * targetArealDensity * sigmaMb * mbToCm2 *
-                          geomEff * daqEffNorm * branchingFraction;
+	  geomEff * daqEffNorm * branchingFraction;
 
         result.nBeam.push_back(nBeam);
         result.crossSectionMb.push_back(sigmaMb);
@@ -543,7 +543,7 @@ YieldEstimateInfo EstimateLambdaYield(const TriggerAcceptanceInfo& info,
         result.yield.push_back(binYield);
         result.totalYield += binYield;
     }
-
+    
     return result;
 }
 
@@ -858,7 +858,7 @@ void yield(){
        << br_Sigma0_to_Lambda << endl;
   PrintYieldTable(yieldInfos, N_target_total, daqEff, br_L);
   DrawTriggerAcceptancePdf(accInfos, beamSpectrum, yieldInfos, "simul/yield.pdf");
-
+  
   fxsec->Close();
 
 
