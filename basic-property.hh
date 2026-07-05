@@ -22,7 +22,9 @@ static const double mpi0     = 134.9768;
 // Particle properties
 // ============================================================
 const double tauK = 1.238e-8;      // s
-const double br_L = 0.64;
+const double br_L_ppi = 0.641;
+const double br_Sigma0_L = 1.0;
+const double br_Sigmap_ppi0 = 0.5147;
 
 // ============================================================
 // Beam intensity / running condition
@@ -77,6 +79,21 @@ static const double lh2_W = 1.008; //atomic mass
 static const double gfrp_W = 20.;
 static const double kapton_W = 12.8;
 static const double mylar_W = 12.5;
+
+
+// ============================================================
+// Efficiency
+// ============================================================
+static const double eff_tpc_L = 0.6;
+static const double tpc_L_mom[] = {
+  0.00, 0.10, 0.19, 0.26, 0.35, 0.50,
+  0.63, 0.80, 0.89, 0.95, 1.02, 1.09
+};
+
+static const double eff_tpc_L_mom[] = {
+  0.285, 0.220, 0.620, 0.718, 0.742, 0.758,
+  0.752, 0.742, 0.726, 0.695, 0.630, 0.472
+};
 
 // ============================================================
 // Useful conversion functions

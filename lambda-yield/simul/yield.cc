@@ -25,8 +25,6 @@
 
 using namespace std;
 
-const double br_Sigma0_to_Lambda = 1.0;
-
 const vector<int> runnumbers = {2447, 2449, 2450, 2451, 2452, 2453, 2454, 2456, 2457, 2458, 2459, 2460};
 
 struct ScalerInfo {
@@ -59,6 +57,7 @@ struct TriggerAcceptanceInfo {
     vector<Long64_t> binEntry;
     vector<Long64_t> binDen;
     vector<Long64_t> binNum;
+    vector<Long64_t> binPhysTrig;
     vector<double> binAcc;
     vector<double> binAccErr;
     vector<double> binCrossSection;
@@ -85,6 +84,13 @@ struct YieldEstimateInfo {
     vector<double> geomEff;
     vector<double> yield;
     double totalYield;
+};
+
+struct ReactionConfig {
+    string reactionName;
+    string simFileName;
+    string graphName;
+    double branchingFraction;
 };
 
 ScalerInfo GetScalerInfo(int runnumber)
@@ -341,6 +347,7 @@ TriggerAcceptanceInfo GetTriggerAcceptance(const string& reaction_name,
         info.binEntry.push_back(0);
         info.binDen.push_back(0);
         info.binNum.push_back(0);
+        info.binPhysTrig.push_back(0);
         info.binAcc.push_back(0.0);
         info.binAccErr.push_back(0.0);
         info.binCrossSection.push_back(InterpolateGraph(cross_section_graph, center));
@@ -374,6 +381,7 @@ TriggerAcceptanceInfo GetTriggerAcceptance(const string& reaction_name,
 
     const Int_t kBeamFlag = 0x8;  // 1000
     const Int_t kFlag1000 = 0x8;
+    const Int_t kFlag1100 = 0xc;
     const Int_t kFlag1101 = 0xd;
     const Int_t kFlag1011 = 0xb;
     const Int_t kFlag1111 = 0xf;
@@ -405,11 +413,15 @@ TriggerAcceptanceInfo GetTriggerAcceptance(const string& reaction_name,
                       trigFlag == kFlag1011 || trigFlag == kFlag1111);
         bool isNum = (trigFlag == kFlag1101 || trigFlag == kFlag1011 ||
                       trigFlag == kFlag1111);
+        bool isPhysTrig = (trigFlag == kFlag1100 || trigFlag == kFlag1011 ||
+                           trigFlag == kFlag1111);
 
         if (isDen)
             ++info.binDen[bin];
         if (isNum)
             ++info.binNum[bin];
+        if (isPhysTrig)
+            ++info.binPhysTrig[bin];
     }
 
     Long64_t nDenTotal = info.nFlag1000 + info.nFlag1101 + info.nFlag1011 + info.nFlag1111;
@@ -431,7 +443,7 @@ TriggerAcceptanceInfo GetTriggerAcceptance(const string& reaction_name,
     return info;
 }
 
-TH1D *MakeCountHist(const TriggerAcceptanceInfo& info, const char *name, const char *title, bool use_denominator)
+TH1D *MakeCountHist(const TriggerAcceptanceInfo& info, const char *name, const char *title, int count_type)
 {
     const int nBins = info.binLow.size();
     vector<double> edges;
@@ -442,7 +454,11 @@ TH1D *MakeCountHist(const TriggerAcceptanceInfo& info, const char *name, const c
     TH1D *hist = new TH1D(name, title, nBins, edges.data());
     hist->SetDirectory(nullptr);
     for (int i = 0; i < nBins; ++i) {
-        Long64_t count = use_denominator ? info.binDen[i] : info.binEntry[i];
+        Long64_t count = info.binEntry[i];
+        if (count_type == 1)
+            count = info.binDen[i];
+        else if (count_type == 2)
+            count = info.binPhysTrig[i];
         hist->SetBinContent(i + 1, count);
     }
     return hist;
@@ -535,8 +551,8 @@ YieldEstimateInfo EstimateLambdaYield(const TriggerAcceptanceInfo& info,
         double sigmaMb = info.binCrossSection[i];
         double geomEff = info.binAcc[i] / 100.0;
         double binYield = nBeam * targetArealDensity * sigmaMb * mbToCm2 *
-	  geomEff * daqEffNorm * branchingFraction;
-
+	  geomEff * daqEffNorm * branchingFraction * eff_tpc_L;
+	
         result.nBeam.push_back(nBeam);
         result.crossSectionMb.push_back(sigmaMb);
         result.geomEff.push_back(geomEff);
@@ -593,14 +609,12 @@ TH1D *MakeYieldHist(const YieldEstimateInfo& info, const char *name, const char 
 
 void PrintYieldTable(const vector<YieldEstimateInfo>& yieldInfos,
                      double targetArealDensity,
-                     double daqEff,
-                     double branchingFraction)
+                     double daqEff)
 {
     cout << fixed << setprecision(6);
     cout << "target areal density used [/cm2] : " << scientific
          << targetArealDensity << fixed << endl;
-    cout << "DAQ efficiency : " << NormalizeEfficiency(daqEff)
-         << ", Lambda branching fraction : " << branchingFraction << endl;
+    cout << "DAQ efficiency : " << NormalizeEfficiency(daqEff) << endl;
 
     for (const auto& info : yieldInfos) {
         cout << "\n[" << info.reactionName << "] expected Lambda yield" << endl;
@@ -625,6 +639,49 @@ void PrintYieldTable(const vector<YieldEstimateInfo>& yieldInfos,
             cout << setw(16) << setprecision(6) << info.yield[i] << endl;
         }
         PrintCountWithUnits("total yield", info.totalYield);
+    }
+}
+
+void PrintTriggerAcceptanceCounts(const vector<TriggerAcceptanceInfo>& infos)
+{
+    cout << fixed << setprecision(6);
+
+    for (const auto& info : infos) {
+        cout << "\n[" << info.reactionName << "] simulation trigger acceptance counts" << endl;
+        cout << "bin [MeV/c]"
+             << setw(14) << "all"
+             << setw(14) << "denominator"
+             << setw(14) << "accepted"
+             << setw(14) << "physTrig"
+             << setw(14) << "acc[%]" << endl;
+
+        Long64_t totalEntry = 0;
+        Long64_t totalDen = 0;
+        Long64_t totalNum = 0;
+        Long64_t totalPhysTrig = 0;
+
+        for (size_t i = 0; i < info.binCenter.size(); ++i) {
+            totalEntry += info.binEntry[i];
+            totalDen += info.binDen[i];
+            totalNum += info.binNum[i];
+            totalPhysTrig += info.binPhysTrig[i];
+
+            cout << setw(4) << static_cast<int>(info.binLow[i]) << "-"
+                 << setw(3) << static_cast<int>(info.binHigh[i])
+                 << setw(14) << info.binEntry[i]
+                 << setw(14) << info.binDen[i]
+                 << setw(14) << info.binNum[i]
+                 << setw(14) << info.binPhysTrig[i]
+                 << setw(14) << info.binAcc[i] << endl;
+        }
+
+        double totalAcc = (totalDen > 0) ? 100.0 * totalNum / totalDen : 0.0;
+        cout << "total"
+             << setw(17) << totalEntry
+             << setw(14) << totalDen
+             << setw(14) << totalNum
+             << setw(14) << totalPhysTrig
+             << setw(14) << totalAcc << endl;
     }
 }
 
@@ -699,19 +756,27 @@ void DrawTriggerAcceptancePdf(const vector<TriggerAcceptanceInfo>& infos,
         c->cd(1);
         TH1D *hEntry = MakeCountHist(info, Form("h_entry_%s", info.reactionName.c_str()),
                                      Form("%s;K^{-} momentum [MeV/#it{c}];Counts", info.reactionName.c_str()),
-                                     false);
+                                     0);
         TH1D *hDen = MakeCountHist(info, Form("h_den_%s", info.reactionName.c_str()),
                                    Form("%s;K^{-} momentum [MeV/#it{c}];Counts", info.reactionName.c_str()),
-                                   true);
+                                   1);
+        TH1D *hPhysTrig = MakeCountHist(info, Form("h_phys_trig_%s", info.reactionName.c_str()),
+                                        Form("%s;K^{-} momentum [MeV/#it{c}];Counts", info.reactionName.c_str()),
+                                        2);
         hEntry->SetLineColor(kBlack);
         hEntry->SetFillColor(0);
         hEntry->Draw("hist");
         hDen->SetLineColor(kBlue + 1);
         hDen->SetFillColor(kAzure - 9);
         hDen->Draw("hist same");
-        TLegend *leg = new TLegend(0.62, 0.72, 0.80, 0.88);
+        hPhysTrig->SetLineColor(kRed + 1);
+        hPhysTrig->SetLineWidth(2);
+        hPhysTrig->SetFillColor(0);
+        hPhysTrig->Draw("hist same");
+        TLegend *leg = new TLegend(0.58, 0.68, 0.84, 0.88);
         leg->AddEntry(hEntry, "simulation entries", "l");
         leg->AddEntry(hDen, "physics trigger denominator", "f");
+        leg->AddEntry(hPhysTrig, "physics trigger passed", "l");
         leg->Draw();
 
         c->cd(2);
@@ -735,6 +800,7 @@ void DrawTriggerAcceptancePdf(const vector<TriggerAcceptanceInfo>& infos,
         c->Print(pdf_file.c_str());
         delete hEntry;
         delete hDen;
+        delete hPhysTrig;
         delete leg;
         delete gAcc;
         delete gXsec;
@@ -795,47 +861,18 @@ void yield(){
       return;
   }
 
-  TGraph *gLambdaEtaXsec = LoadCrossSectionGraph(fxsec, "g_Lambda_eta_pK");
-  TGraph *gLambdaPiXsec = LoadCrossSectionGraph(fxsec, "g_Lambda_pi0_pK");
-  TGraph *gSigmaPiXsec = LoadCrossSectionGraph(fxsec, "g_Sigma0_pi0_pK");
+  vector<ReactionConfig> reactions = {
+      // Add a new reaction here: {label, simulation ROOT file, total-cross-section graph, Lambda-visible branching fraction}
+      {"Lambda_eta", "e72_lambda_yield_lambda_eta.root", "g_Lambda_eta_pK", br_L_ppi},
+      {"Lambda_pi0", "e72_lambda_yield_lambda_pi.root", "g_Lambda_pi0_pK", br_L_ppi},
+      {"Sigma0_pi0", "e72_lambda_yield_sigma0_pi0.root", "g_Sigma0_pi0_pK", br_Sigma0_L * br_L_ppi},
+      {"Sigmap_pim", "e72_lambda_yield_sigmap_pim.root", "g_Sigmap_pim_pK", br_Sigmap_ppi0},
+      {"Lambda_pip_pim", "e72_lambda_yield_lambda_pi_pi.root", "g_Lambda_pip_pim_pK", br_L_ppi},
+      {"Sigma0_pip_pim", "e72_lambda_yield_sigma0_pip_pim.root", "g_Sigma0_pip_pim_pK", br_Sigma0_L * br_L_ppi},
+      {"Sigmap_pim_pi0", "e72_lambda_yield_sigmap_pim_pi0.root", "g_Sigmap_pim_pi0_pK", br_Sigmap_ppi0}
+      
+  };
 
-  TriggerAcceptanceInfo lambdaEtaAcc = GetTriggerAcceptance("Lambda_eta",
-                                                            sim_dir + "/e72_lambda_yield_lambda_eta.root",
-                                                            "g_Lambda_eta_pK",
-                                                            gLambdaEtaXsec,
-                                                            momBins);
-  TriggerAcceptanceInfo lambdaPiAcc = GetTriggerAcceptance("Lambda_pi0",
-                                                           sim_dir + "/e72_lambda_yield_lambda_pi.root",
-                                                           "g_Lambda_pi0_pK",
-                                                           gLambdaPiXsec,
-                                                           momBins);
-  TriggerAcceptanceInfo sigmaPiAcc = GetTriggerAcceptance("Sigma0_pi0",
-                                                          sim_dir + "/e72_lambda_yield_sigma_pi.root",
-                                                          "g_Sigma0_pi0_pK",
-                                                          gSigmaPiXsec,
-                                                          momBins);
-
-  vector<double> xsecLambdaEta = lambdaEtaAcc.binCrossSection;
-  vector<double> xsecLambdaPi = lambdaPiAcc.binCrossSection;
-  vector<double> xsecSigmaPi = sigmaPiAcc.binCrossSection;
-
-  Long64_t nBeamLambdaEta = lambdaEtaAcc.nBeam;
-  Long64_t nTrigDenLambdaEta = lambdaEtaAcc.nFlag1000 + lambdaEtaAcc.nFlag1101 + lambdaEtaAcc.nFlag1011 + lambdaEtaAcc.nFlag1111;
-  Long64_t nTrigNumLambdaEta = lambdaEtaAcc.nFlag1101 + lambdaEtaAcc.nFlag1011 + lambdaEtaAcc.nFlag1111;
-
-  Long64_t nBeamLambdaPi = lambdaPiAcc.nBeam;
-  Long64_t nTrigDenLambdaPi = lambdaPiAcc.nFlag1000 + lambdaPiAcc.nFlag1101 + lambdaPiAcc.nFlag1011 + lambdaPiAcc.nFlag1111;
-  Long64_t nTrigNumLambdaPi = lambdaPiAcc.nFlag1101 + lambdaPiAcc.nFlag1011 + lambdaPiAcc.nFlag1111;
-
-  Long64_t nBeamSigmaPi = sigmaPiAcc.nBeam;
-  Long64_t nTrigDenSigmaPi = sigmaPiAcc.nFlag1000 + sigmaPiAcc.nFlag1101 + sigmaPiAcc.nFlag1011 + sigmaPiAcc.nFlag1111;
-  Long64_t nTrigNumSigmaPi = sigmaPiAcc.nFlag1101 + sigmaPiAcc.nFlag1011 + sigmaPiAcc.nFlag1111;
-
-  double geomAccLambdaEta = nTrigDenLambdaEta > 0 ? 100.0 * nTrigNumLambdaEta / nTrigDenLambdaEta : 0.0;
-  double geomAccLambdaPi = nTrigDenLambdaPi > 0 ? 100.0 * nTrigNumLambdaPi / nTrigDenLambdaPi : 0.0;
-  double geomAccSigmaPi = nTrigDenSigmaPi > 0 ? 100.0 * nTrigNumSigmaPi / nTrigDenSigmaPi : 0.0;
-
-  
   double mmtocm = 0.1;
   double N_lh2 = GetLH2TargetArealDensity();
   double N_gfrp = gfrp_density*N_A*gfrp_thick*mmtocm*gfrp_layer/gfrp_W;
@@ -846,18 +883,28 @@ void yield(){
   PrintCountWithUnits("number of LH2 target", N_lh2);
   PrintCountWithUnits("number of total target used for yield", N_target_total);
 
-  vector<TriggerAcceptanceInfo> accInfos = {lambdaEtaAcc, lambdaPiAcc, sigmaPiAcc};
+  vector<TriggerAcceptanceInfo> accInfos;
   vector<YieldEstimateInfo> yieldInfos;
-  yieldInfos.push_back(EstimateLambdaYield(lambdaEtaAcc, beamSpectrum, N_target_total, daqEff, br_L));
-  yieldInfos.push_back(EstimateLambdaYield(lambdaPiAcc, beamSpectrum, N_target_total, daqEff, br_L));
-  yieldInfos.push_back(EstimateLambdaYield(sigmaPiAcc, beamSpectrum, N_target_total, daqEff,
-                                           br_L * br_Sigma0_to_Lambda));
-  yieldInfos.push_back(SumYieldInfos(yieldInfos, "Total"));
 
-  cout << "Sigma0 -> Lambda gamma branching fraction : "
-       << br_Sigma0_to_Lambda << endl;
-  PrintYieldTable(yieldInfos, N_target_total, daqEff, br_L);
-  DrawTriggerAcceptancePdf(accInfos, beamSpectrum, yieldInfos, "simul/yield.pdf");
+  for (const auto& reaction : reactions) {
+      TGraph *xsecGraph = LoadCrossSectionGraph(fxsec, reaction.graphName);
+      TriggerAcceptanceInfo acc = GetTriggerAcceptance(reaction.reactionName,
+                                                       sim_dir + "/" + reaction.simFileName,
+                                                       reaction.graphName,
+                                                       xsecGraph,
+                                                       momBins);
+      yieldInfos.push_back(EstimateLambdaYield(acc,
+                                               beamSpectrum,
+                                               N_target_total,
+                                               daqEff,
+                                               reaction.branchingFraction));
+      accInfos.push_back(acc);
+  }
+
+  yieldInfos.push_back(SumYieldInfos(yieldInfos, "Total"));
+  PrintTriggerAcceptanceCounts(accInfos);
+  PrintYieldTable(yieldInfos, N_target_total, daqEff);
+  DrawTriggerAcceptancePdf(accInfos, beamSpectrum, yieldInfos, "yield.pdf");
   
   fxsec->Close();
 
