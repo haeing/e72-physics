@@ -191,10 +191,10 @@ void cut_condition()
   c1->Clear();
 
   TH1D *hist_mass = new TH1D("hist_mass",
-                             "p#pi^{-} invariant mass;M(p#pi^{-}) [GeV/c^{2}];Counts",
+                             "p#pi^{-} invariant mass;M(p#pi^{-}) [GeV/#it{c}^{2}];Counts",
                              200, 1.05, 1.25);
   TH1D *hist_mass_tight = new TH1D("hist_mass_tight",
-                                   "p#pi^{-} invariant mass, tight cut;M(p#pi^{-}) [GeV/c^{2}];Counts",
+                                   "p#pi^{-} invariant mass, tight cut;M(p#pi^{-}) [GeV/#it{c}^{2}];Counts",
                                    200, 1.05, 1.25);
 
   TH1D *hist_dst_all = new TH1D("hist_dst_all",
@@ -491,7 +491,7 @@ void cut_condition()
   c1->Clear();
 
   hist_mass_tight->Draw("hist");
-  DrawPeakWindowLines(hist_mass_tight->GetMaximum() * 1.05);
+  //DrawPeakWindowLines(hist_mass_tight->GetMaximum() * 1.05);
   c1->Print(outpdf.c_str());
   c1->Clear();
 
