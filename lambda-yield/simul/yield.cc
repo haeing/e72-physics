@@ -25,7 +25,8 @@
 
 using namespace std;
 
-const vector<int> runnumbers = {2447, 2449, 2450, 2451, 2452, 2453, 2454, 2456, 2457, 2458, 2459, 2460};
+const vector<int> runnumbers = {2447, 2449, 2450, 2451, 2452, 2453, 2454, 2456, 2457, 2458, 2459, 2460, 2462, 2463, 2465, 2466, 2468};
+//const vector<int> runnumbers = {2447};
 
 struct ScalerInfo {
     Long64_t trigD;
@@ -44,19 +45,12 @@ struct TriggerAcceptanceInfo {
     string graphName;
     Long64_t nEntry;
     Long64_t nBeam;
-    Long64_t nFlag1000;
-    Long64_t nFlag1101;
-    Long64_t nFlag1011;
-    Long64_t nFlag1111;
-    double pctFlag1101;
-    double pctFlag1011;
-    double pctFlag1111;
+    Long64_t nPhysTrig;
     vector<double> binLow;
     vector<double> binHigh;
     vector<double> binCenter;
     vector<Long64_t> binEntry;
-    vector<Long64_t> binDen;
-    vector<Long64_t> binNum;
+    vector<Long64_t> binBeam;
     vector<Long64_t> binPhysTrig;
     vector<double> binAcc;
     vector<double> binAccErr;
@@ -328,13 +322,7 @@ TriggerAcceptanceInfo GetTriggerAcceptance(const string& reaction_name,
     info.graphName = graph_name;
     info.nEntry = 0;
     info.nBeam = 0;
-    info.nFlag1000 = 0;
-    info.nFlag1101 = 0;
-    info.nFlag1011 = 0;
-    info.nFlag1111 = 0;
-    info.pctFlag1101 = 0.0;
-    info.pctFlag1011 = 0.0;
-    info.pctFlag1111 = 0.0;
+    info.nPhysTrig = 0;
 
     const int nBins = static_cast<int>(mom_bins.size()) - 1;
     for (int i = 0; i < nBins; ++i) {
@@ -345,8 +333,7 @@ TriggerAcceptanceInfo GetTriggerAcceptance(const string& reaction_name,
         info.binHigh.push_back(high);
         info.binCenter.push_back(center);
         info.binEntry.push_back(0);
-        info.binDen.push_back(0);
-        info.binNum.push_back(0);
+        info.binBeam.push_back(0);
         info.binPhysTrig.push_back(0);
         info.binAcc.push_back(0.0);
         info.binAccErr.push_back(0.0);
@@ -379,12 +366,8 @@ TriggerAcceptanceInfo GetTriggerAcceptance(const string& reaction_name,
     tree->SetBranchAddress("trig_flag", &trigFlag);
     tree->SetBranchAddress("mom_kaon_lab", &momKaonLab);
 
-    const Int_t kBeamFlag = 0x8;  // 1000
-    const Int_t kFlag1000 = 0x8;
-    const Int_t kFlag1100 = 0xc;
-    const Int_t kFlag1101 = 0xd;
-    const Int_t kFlag1011 = 0xb;
-    const Int_t kFlag1111 = 0xf;
+    const Int_t kBeamFlag = 0x10;  // 10000
+    const Int_t kKvcSignalFlag = 0x8;  // 01000: KVC signal present
 
     info.nEntry = tree->GetEntries();
     for (Long64_t i = 0; i < info.nEntry; ++i) {
@@ -394,48 +377,29 @@ TriggerAcceptanceInfo GetTriggerAcceptance(const string& reaction_name,
         if (bin >= 0)
             ++info.binEntry[bin];
 
-        if ((trigFlag & kBeamFlag) != 0)
-            ++info.nBeam;
+        bool isBeam = (trigFlag >= kBeamFlag);
+        bool hasKvcSignal = ((trigFlag & kKvcSignalFlag) != 0);
+        bool isPhysTrig = (isBeam && !hasKvcSignal);
 
-        if (trigFlag == kFlag1000)
-            ++info.nFlag1000;
-        else if (trigFlag == kFlag1101)
-            ++info.nFlag1101;
-        else if (trigFlag == kFlag1011)
-            ++info.nFlag1011;
-        else if (trigFlag == kFlag1111)
-            ++info.nFlag1111;
+        if (isBeam)
+            ++info.nBeam;
+        if (isPhysTrig)
+            ++info.nPhysTrig;
 
         if (bin < 0)
             continue;
 
-        bool isDen = (trigFlag == kFlag1000 || trigFlag == kFlag1101 ||
-                      trigFlag == kFlag1011 || trigFlag == kFlag1111);
-        bool isNum = (trigFlag == kFlag1101 || trigFlag == kFlag1011 ||
-                      trigFlag == kFlag1111);
-        bool isPhysTrig = (trigFlag == kFlag1100 || trigFlag == kFlag1011 ||
-                           trigFlag == kFlag1111);
-
-        if (isDen)
-            ++info.binDen[bin];
-        if (isNum)
-            ++info.binNum[bin];
+        if (isBeam)
+            ++info.binBeam[bin];
         if (isPhysTrig)
             ++info.binPhysTrig[bin];
     }
 
-    Long64_t nDenTotal = info.nFlag1000 + info.nFlag1101 + info.nFlag1011 + info.nFlag1111;
-    if (nDenTotal > 0) {
-        info.pctFlag1101 = 100.0 * info.nFlag1101 / nDenTotal;
-        info.pctFlag1011 = 100.0 * info.nFlag1011 / nDenTotal;
-        info.pctFlag1111 = 100.0 * info.nFlag1111 / nDenTotal;
-    }
-
     for (size_t i = 0; i < info.binAcc.size(); ++i) {
-        if (info.binDen[i] > 0) {
-            double acc = static_cast<double>(info.binNum[i]) / info.binDen[i];
+        if (info.binBeam[i] > 0) {
+            double acc = static_cast<double>(info.binPhysTrig[i]) / info.binBeam[i];
             info.binAcc[i] = 100.0 * acc;
-            info.binAccErr[i] = 100.0 * sqrt(acc * (1.0 - acc) / info.binDen[i]);
+            info.binAccErr[i] = 100.0 * sqrt(acc * (1.0 - acc) / info.binBeam[i]);
         }
     }
 
@@ -456,7 +420,7 @@ TH1D *MakeCountHist(const TriggerAcceptanceInfo& info, const char *name, const c
     for (int i = 0; i < nBins; ++i) {
         Long64_t count = info.binEntry[i];
         if (count_type == 1)
-            count = info.binDen[i];
+            count = info.binBeam[i];
         else if (count_type == 2)
             count = info.binPhysTrig[i];
         hist->SetBinContent(i + 1, count);
@@ -650,36 +614,31 @@ void PrintTriggerAcceptanceCounts(const vector<TriggerAcceptanceInfo>& infos)
         cout << "\n[" << info.reactionName << "] simulation trigger acceptance counts" << endl;
         cout << "bin [MeV/c]"
              << setw(14) << "all"
-             << setw(14) << "denominator"
-             << setw(14) << "accepted"
+             << setw(14) << "beam"
              << setw(14) << "physTrig"
              << setw(14) << "acc[%]" << endl;
 
         Long64_t totalEntry = 0;
-        Long64_t totalDen = 0;
-        Long64_t totalNum = 0;
+        Long64_t totalBeam = 0;
         Long64_t totalPhysTrig = 0;
 
         for (size_t i = 0; i < info.binCenter.size(); ++i) {
             totalEntry += info.binEntry[i];
-            totalDen += info.binDen[i];
-            totalNum += info.binNum[i];
+            totalBeam += info.binBeam[i];
             totalPhysTrig += info.binPhysTrig[i];
 
             cout << setw(4) << static_cast<int>(info.binLow[i]) << "-"
                  << setw(3) << static_cast<int>(info.binHigh[i])
                  << setw(14) << info.binEntry[i]
-                 << setw(14) << info.binDen[i]
-                 << setw(14) << info.binNum[i]
+                 << setw(14) << info.binBeam[i]
                  << setw(14) << info.binPhysTrig[i]
                  << setw(14) << info.binAcc[i] << endl;
         }
 
-        double totalAcc = (totalDen > 0) ? 100.0 * totalNum / totalDen : 0.0;
+        double totalAcc = (totalBeam > 0) ? 100.0 * totalPhysTrig / totalBeam : 0.0;
         cout << "total"
              << setw(17) << totalEntry
-             << setw(14) << totalDen
-             << setw(14) << totalNum
+             << setw(14) << totalBeam
              << setw(14) << totalPhysTrig
              << setw(14) << totalAcc << endl;
     }
@@ -775,7 +734,7 @@ void DrawTriggerAcceptancePdf(const vector<TriggerAcceptanceInfo>& infos,
         hPhysTrig->Draw("hist same");
         TLegend *leg = new TLegend(0.58, 0.68, 0.84, 0.88);
         leg->AddEntry(hEntry, "simulation entries", "l");
-        leg->AddEntry(hDen, "physics trigger denominator", "f");
+        leg->AddEntry(hDen, "beam trigger total", "f");
         leg->AddEntry(hPhysTrig, "physics trigger passed", "l");
         leg->Draw();
 
@@ -839,7 +798,7 @@ void yield(){
 
   // Edit these edges after checking the PDF. Units are MeV/c.
   std::vector<double> momBins;
-  for (double mom = 700; mom <= 780; mom += 5) {
+  for (double mom = 700; mom <= 780; mom += 2) {
     momBins.push_back(mom);
   }
 

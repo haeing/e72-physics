@@ -22,20 +22,157 @@
 
 using namespace std;
 
-const vector<int> runnumbers = {2447, 2449, 2450, 2451, 2452, 2453, 2454, 2456, 2457, 2458, 2459, 2460};
-//const vector<int> runnumbers = {2447};
+//const vector<int> runnumbers = {2447, 2449, 2450, 2451, 2452, 2453, 2454, 2456, 2457, 2458, 2459, 2460, 2462, 2463, 2465, 2466, 2468};
+const vector<int> runnumbers = {2447};
 
 const double lambda_peak_min = 1.095; // GeV/c2
 const double lambda_peak_max = 1.125; // GeV/c2
 const double tight_close_dist = 5.;   // mm
 const double tight_chisqr = 2.;
+const double pim_mom_cut = 0.3; // GeV/c
+const double p_mom_cut = 1.0; //GeV/c
 const int lambda_bkg_poly_order = 1; // choose 1, 2, or 3
+
+const double pid_conversion_factor = 7388.11; // conversion-factor.cc E72 fit value
+const double pid_pion_nsigma_low = -3.0;
+const double pid_pion_nsigma_high = 3.0;
+const double pid_kaon_nsigma_low = -2.0;
+const double pid_kaon_nsigma_high = 2.0;
+const double pid_proton_nsigma_low = -1.5;
 
 const double mass_pi = 0.13957039; // GeV/c2
 const double mass_p = 0.93827208;  // GeV/c2
+const double mass_e_MeV = 0.5109989461;
+const double mass_pi_MeV = 139.57061;
+const double mass_k_MeV = 493.677;
+const double mass_p_MeV = 938.2720813;
+
+enum SigmaPIDBit {
+  kSigmaPion = 0x1,
+  kSigmaKaon = 0x2,
+  kSigmaProton = 0x4
+};
 
 bool IsPion(int pid) { return (pid & 0x1) != 0; }
 bool IsProton(int pid) { return (pid & 0x4) != 0; }
+
+double DensityEffectCorrection(double betagamma, const double *par)
+{
+  const double c = 2. * log(10.);
+  const double x = log10(betagamma);
+
+  if (x <= par[2])
+    return par[5] * pow(10., 2. * (x - par[2]));
+
+  if (x < par[3])
+    return c * x - par[4] + par[0] * pow(par[3] - x, par[1]);
+
+  return c * x - par[4];
+}
+
+double BetheP10Raw(double mass_MeV, double beta)
+{
+  const double rho = 1.e-3 * (0.9 * 1.662 + 0.1 * 0.6672);
+  const double ZoverA = 17.2 / 37.6;
+  const double I = 0.9 * 188.0 + 0.1 * 41.7; // eV
+  double den[6] = {
+    0.9 * 0.19714 + 0.1 * 0.09253,
+    0.9 * 2.9618  + 0.1 * 3.6257,
+    0.9 * 1.7635  + 0.1 * 1.6263,
+    0.9 * 4.4855  + 0.1 * 3.9716,
+    0.9 * 11.9480 + 0.1 * 9.5243,
+    0.
+  };
+
+  const double K = 0.307075;
+  const double beta2 = beta * beta;
+  const double gamma2 = 1. / (1. - beta2);
+  const double MeVToeV = 1.e6;
+  const double Wmax =
+    2. * mass_e_MeV * beta2 * gamma2 /
+    (pow(mass_e_MeV / mass_MeV + 1., 2.) +
+     2. * (mass_e_MeV / mass_MeV) * (sqrt(gamma2) - 1.));
+  const double delta = DensityEffectCorrection(sqrt(beta2 * gamma2), den);
+
+  return rho * K * ZoverA / beta2 *
+    (0.5 * log(2. * mass_e_MeV * beta2 * gamma2
+               * Wmax * MeVToeV * MeVToeV / (I * I))
+     - beta2
+     - 0.5 * delta);
+}
+
+double PIDMean(double signed_mom, double mass_MeV)
+{
+  const double p_MeV = 1000. * fabs(signed_mom);
+  if (p_MeV <= 0.)
+    return 0.;
+
+  const double energy = hypot(mass_MeV, p_MeV);
+  const double beta = p_MeV / energy;
+  return pid_conversion_factor * BetheP10Raw(mass_MeV, beta);
+}
+
+double CalcTPCdEdxSigma(const double sigma_par[5], double signed_mom)
+{
+  const double absmom = fabs(signed_mom);
+  return sigma_par[0]
+       + sigma_par[1] * absmom
+       + sigma_par[2] * signed_mom * signed_mom
+       + sigma_par[3] * exp(sigma_par[4] * absmom);
+}
+
+double PIDSigma(double signed_mom, int pid_bit)
+{
+  const double sigma_dedx_pi[5] = {3.94842, 0.0138502, -0.110281, 12.6065, -10.9347};
+  const double sigma_dedx_k[5]  = {6.24543, -3.21037, 1.52683, 127.099, -9.1004};
+  const double sigma_dedx_p[5]  = {12.9717, -8.43799, 3.10608, 166.0, -6.56123};
+
+  if (pid_bit == kSigmaPion)
+    return CalcTPCdEdxSigma(sigma_dedx_pi, signed_mom);
+  if (pid_bit == kSigmaKaon)
+    return CalcTPCdEdxSigma(sigma_dedx_k, signed_mom);
+  return CalcTPCdEdxSigma(sigma_dedx_p, signed_mom);
+}
+
+bool PassSigmaPIDWindow(double signed_mom,
+                        double dedx,
+                        double mass_MeV,
+                        int pid_bit,
+                        double nsigma_low,
+                        double nsigma_high,
+                        bool use_high_cut = true)
+{
+  if (!isfinite(signed_mom) || !isfinite(dedx) || dedx <= 0.)
+    return false;
+
+  const double mean = PIDMean(signed_mom, mass_MeV);
+  const double sigma = PIDSigma(signed_mom, pid_bit);
+  if (mean <= 0. || sigma <= 0.)
+    return false;
+
+  const double low = mean + nsigma_low * sigma;
+  if (!use_high_cut)
+    return dedx >= low;
+
+  const double high = mean + nsigma_high * sigma;
+  return dedx >= min(low, high) && dedx <= max(low, high);
+}
+
+int BuildSigmaPIDFlag(double signed_mom, double dedx)
+{
+  int pid = 0;
+  if (PassSigmaPIDWindow(signed_mom, dedx, mass_pi_MeV, kSigmaPion,
+                         pid_pion_nsigma_low, pid_pion_nsigma_high))
+    pid |= kSigmaPion;
+  if (PassSigmaPIDWindow(signed_mom, dedx, mass_k_MeV, kSigmaKaon,
+                         pid_kaon_nsigma_low, pid_kaon_nsigma_high))
+    pid |= kSigmaKaon;
+  if (PassSigmaPIDWindow(signed_mom, dedx, mass_p_MeV, kSigmaProton,
+                         pid_proton_nsigma_low, 0.0, false))
+    pid |= kSigmaProton;
+
+  return pid;
+}
 
 void DrawPeakWindowLines(double ymax)
 {
@@ -104,7 +241,7 @@ YieldResult FitLambdaYield(TH1D *hist, const char *tag)
     fit->SetParameter(3 + i, (i == 0) ? 100. : 0.);
   }
   fit->SetParLimits(1, 1.108, 1.122);
-  fit->SetParLimits(2, 0.001, 0.015);
+  fit->SetParLimits(2, 0.005, 0.007);
 
   hist->Fit(fit, "R");
 
@@ -163,11 +300,17 @@ void cut_condition()
 {
   string dir = "/gpfs/group/had/sks/Users/haein/data/JPARC2025Nov_root/physics-735";
   string outpdf;
-  if (runnumbers.size() == 1)
+  string outroot;
+  if (runnumbers.size() == 1){
     outpdf = Form("result/cut-condition-run%05d.pdf", runnumbers.front());
-  else
+    outroot = Form("result/cut-condition-run%05d.root", runnumbers.front());
+  }
+  else{
     outpdf = Form("result/cut-condition-run%05d-%05d-n%zu.pdf",
                   runnumbers.front(), runnumbers.back(), runnumbers.size());
+    outroot = Form("result/cut-condition-run%05d-%05d-n%zu.root",
+                  runnumbers.front(), runnumbers.back(), runnumbers.size());
+  }
 
   TCanvas *c1 = new TCanvas("c1", "c1", 900, 700);
   TPaveText *p = new TPaveText(0.1, 0.1, 0.9, 0.9, "NDC");
@@ -353,19 +496,23 @@ void cut_condition()
       tree->GetEntry(i);
 
     for (Int_t ip = 0; ip < tracks.ntTpc; ++ip) {
-      const int pid_p = tracks.pid->at(ip);
       const int charge_p = tracks.charge->at(ip);
+      const double mom0_p_for_pid = tracks.mom0->at(ip);
+      const double dedx_p_for_pid = tracks.dEdx->at(ip);
+      const int pid_p = BuildSigmaPIDFlag(charge_p * mom0_p_for_pid, dedx_p_for_pid);
       hist_pid->Fill(pid_p);
 
-      if (!IsProton(pid_p) || charge_p <= 0)
+      if (!IsProton(pid_p) || charge_p <= 0 || dedx_p_for_pid < 25)
         continue;
 
       for (Int_t ipi = 0; ipi < tracks.ntTpc; ++ipi) {
         if (ip == ipi)
           continue;
 
-      const int pid_pi = tracks.pid->at(ipi);
         const int charge_pi = tracks.charge->at(ipi);
+        const double mom0_pi_for_pid = tracks.mom0->at(ipi);
+        const double dedx_pi_for_pid = tracks.dEdx->at(ipi);
+        const int pid_pi = BuildSigmaPIDFlag(charge_pi * mom0_pi_for_pid, dedx_pi_for_pid);
         if (!IsPion(pid_pi) || charge_pi >= 0)
           continue;
 
@@ -411,8 +558,12 @@ void cut_condition()
         hist_vtx_xy_all->Fill(vtx_x, vtx_y);
 
         const bool is_peak = (lambda_peak_min <= inv_mass && inv_mass <= lambda_peak_max);
-        const bool is_tight = (close_dist < tight_close_dist &&
+	/*
+	  const bool is_tight = (close_dist < tight_close_dist &&
                                chisqr_p <= tight_chisqr && chisqr_pi <= tight_chisqr);
+	*/
+	const bool is_tight = (close_dist < tight_close_dist &&
+                               chisqr_p <= tight_chisqr && chisqr_pi <= tight_chisqr && mom0_pi < pim_mom_cut);
 
         if (is_peak) {
           hist_dst_peak->Fill(close_dist);
@@ -570,7 +721,7 @@ void cut_condition()
   hist_vtx_xy_peak->Draw("colz");
   c1->Print(outpdf.c_str());
   c1->Clear();
-
+  
   hist_vtx_xz_tight->Draw("colz");
   c1->Print(outpdf.c_str());
   c1->Clear();
@@ -653,5 +804,11 @@ void cut_condition()
   hist_pi_mom_tight->SetLineColor(kRed + 1);
   hist_pi_mom_tight->Draw("hist");
   c1->Print((outpdf + ")").c_str());
+  
+  TFile *f = new TFile(outroot.c_str(),"RECREATE");
+  hist_mass_tight->Write();
+  
+  f->Close();
+			
 
 }
