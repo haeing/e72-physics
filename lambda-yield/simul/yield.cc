@@ -379,7 +379,7 @@ TriggerAcceptanceInfo GetTriggerAcceptance(const string& reaction_name,
 
         bool isBeam = (trigFlag >= kBeamFlag);
         bool hasKvcSignal = ((trigFlag & kKvcSignalFlag) != 0);
-        bool isPhysTrig = (isBeam && !hasKvcSignal);
+        bool isPhysTrig = (isBeam && !hasKvcSignal && trigFlag > 16);
 
         if (isBeam)
             ++info.nBeam;
