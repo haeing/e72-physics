@@ -1,9 +1,11 @@
 void lambda_eta_phase() {
-
+  gROOT->SetBatch(kTRUE);
   gStyle->SetOptStat(0);
 
   gStyle->SetPalette(1);
 
+  string outpdf = "lambda-eta-phase.pdf";
+  
   Double_t Km = 0.493;
   Double_t pk = 0.735;
   Double_t Pm = 0.938;
@@ -100,45 +102,56 @@ void lambda_eta_phase() {
       h3->Fill(peta_ori->CosTheta(),peta_ori->P());
  
    }
-   TCanvas *c1 = new TCanvas("c1","c1");
-   c1->Divide(2);
-   c1->cd(1);
-   //h2->SetMarkerColor(kBlack);
-   h2->SetTitle("#Lambda;cos#theta;momentum [GeV/c]");
+   TCanvas *c1 = new TCanvas("c1", "c1", 900, 700);
+   TPaveText *p = new TPaveText(0.1, 0.1, 0.9, 0.9, "NDC");
+   p->AddText("cut-condition.cc");
+   TDatime now;
+   p->AddText(Form("Generated at: %04d-%02d-%02d %02d:%02d:%02d",
+		   now.GetYear(), now.GetMonth(), now.GetDay(),
+		   now.GetHour(), now.GetMinute(), now.GetSecond()));
+   p->Draw();
+   c1->Print((outpdf + "(").c_str());
+   c1->Clear();
+
+  
+   h2->SetTitle("#Lambda;cos#theta;momentum [GeV/#it{c}]");
    h2->Draw("colz");
-
-   c1->cd(2);
+   c1->Print(outpdf.c_str());
+   c1->Clear();
+   
    h3->SetMarkerColor(kBlack);
-   h3->SetTitle("#eta;cos#theta;momentum [GeV/c]");
+   h3->SetTitle("#eta;cos#theta;momentum [GeV/#it{c}]");
    h3->Draw("colz");
-
-   TCanvas *c2 = new TCanvas("c2","c2");
-   c2->Divide(2);
-   c2->cd(1);
+   c1->Print(outpdf.c_str());
+   c1->Clear();
+   
    h4->SetMarkerColor(kBlack);
-   h4->SetTitle("P from #Lambda;cos#theta;momentum [GeV/c]");
+   h4->SetTitle("P from #Lambda;cos#theta;momentum [GeV/#it{c}]");
    h4->Draw("colz");
+   c1->Print(outpdf.c_str());
+   c1->Clear();
 
-   c2->cd(2);
    h5->SetMarkerColor(kBlack);
-   h5->SetTitle("#pi from #Lambda;cos#theta;momentum [GeV/c]");
+   h5->SetTitle("#pi from #Lambda;cos#theta;momentum [GeV/#it{c}]");
    h5->Draw("colz");
+   c1->Print(outpdf.c_str());
+   c1->Clear();
 
-   TCanvas *c3 = new TCanvas("c3","c3");
-   c3->Divide(2);
-   c3->cd(1);
    h6->SetMarkerColor(kBlack);
-   h6->SetTitle("#pi^+ from #eta;cos#theta;momentum [GeV/c]");
+   h6->SetTitle("#pi^+ from #eta;cos#theta;momentum [GeV/#it{c}]");
    h6->Draw("colz");
+   c1->Print(outpdf.c_str());
+   c1->Clear();
 
-   c3->cd(2);
    h7->SetMarkerColor(kBlack);
-   h7->SetTitle("#pi^0 from #eta;cos#theta;momentum [GeV/c]");
+   h7->SetTitle("#pi^0 from #eta;cos#theta;momentum [GeV/#it{c}]");
    h7->Draw("colz");
+   c1->Print(outpdf.c_str());
+   c1->Clear();
 
-   TCanvas *c4 = new TCanvas("c4","c4");
    h8->SetMarkerColor(kBlack);
-   h8->SetTitle("#pi^- from #eta;cos#theta;momentum [GeV/c]");
+   h8->SetTitle("#pi^- from #eta;cos#theta;momentum [GeV/#it{c}]");
    h8->Draw("colz");
+   c1->Print((outpdf + ")").c_str());
    
 }
