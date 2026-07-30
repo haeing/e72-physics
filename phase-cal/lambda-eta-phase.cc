@@ -39,6 +39,33 @@ void lambda_eta_phase() {
 
    TH2F *h8 = new TH2F("h8","h8", 200,0.,1, 200,0.,0.7);
 
+   const Int_t nParticles = 7;
+   const Int_t nMomentumComponents = 4;
+   const char *particleNames[nParticles] = {
+      "lambda", "eta", "proton_from_lambda", "pion_from_lambda",
+      "piplus_from_eta", "pi0_from_eta", "piminus_from_eta"
+   };
+   const char *particleTitles[nParticles] = {
+      "#Lambda", "#eta", "p from #Lambda", "#pi from #Lambda",
+      "#pi^{+} from #eta", "#pi^{0} from #eta", "#pi^{-} from #eta"
+   };
+   const char *componentNames[nMomentumComponents] = {"p", "px", "py", "pz"};
+   const char *componentTitles[nMomentumComponents] = {
+      "|#vec{p}|", "p_{x}", "p_{y}", "p_{z}"
+   };
+   TH1F *hMomentum[nParticles][nMomentumComponents];
+   for (Int_t i = 0; i < nParticles; i++) {
+      for (Int_t j = 0; j < nMomentumComponents; j++) {
+         const Double_t xmin = (j == 0) ? 0.0 : -1.2;
+         const Double_t xmax = 1.2;
+         hMomentum[i][j] = new TH1F(
+            Form("h_%s_%s", particleNames[i], componentNames[j]),
+            Form("%s: %s in lab;%s [GeV/#it{c}];Events",
+                 particleTitles[i], componentTitles[j], componentTitles[j]),
+            240, xmin, xmax);
+      }
+   }
+
 
    TLorentzVector pLambda;
    TLorentzVector peta;
@@ -85,7 +112,17 @@ void lambda_eta_phase() {
 
       TLorentzVector *pPim_eta2 = event4.GetDecay(0);
       h8->Fill(pPim_eta2->CosTheta(),pPim_eta2->P());
-      
+
+      TLorentzVector *labParticles[nParticles] = {
+         pLambda_ori, peta_ori, pP_lam, pPi_lam,
+         pPip_eta, pPi0_eta, pPim_eta2
+      };
+      for (Int_t i = 0; i < nParticles; i++) {
+         hMomentum[i][0]->Fill(labParticles[i]->P());
+         hMomentum[i][1]->Fill(labParticles[i]->Px());
+         hMomentum[i][2]->Fill(labParticles[i]->Py());
+         hMomentum[i][3]->Fill(labParticles[i]->Pz());
+      }
 
       
       //delete pLambda;
@@ -104,7 +141,7 @@ void lambda_eta_phase() {
    }
    TCanvas *c1 = new TCanvas("c1", "c1", 900, 700);
    TPaveText *p = new TPaveText(0.1, 0.1, 0.9, 0.9, "NDC");
-   p->AddText("cut-condition.cc");
+   p->AddText("lambda-eta-phase.cc");
    TDatime now;
    p->AddText(Form("Generated at: %04d-%02d-%02d %02d:%02d:%02d",
 		   now.GetYear(), now.GetMonth(), now.GetDay(),
@@ -152,6 +189,22 @@ void lambda_eta_phase() {
    h8->SetMarkerColor(kBlack);
    h8->SetTitle("#pi^- from #eta;cos#theta;momentum [GeV/#it{c}]");
    h8->Draw("colz");
-   c1->Print((outpdf + ")").c_str());
+   c1->Print(outpdf.c_str());
+   c1->Clear();
+
+   for (Int_t i = 0; i < nParticles; i++) {
+      c1->Divide(2, 2);
+      for (Int_t j = 0; j < nMomentumComponents; j++) {
+         c1->cd(j + 1);
+         hMomentum[i][j]->SetLineWidth(2);
+         hMomentum[i][j]->Draw("hist");
+      }
+      if (i == nParticles - 1) {
+         c1->Print((outpdf + ")").c_str());
+      } else {
+         c1->Print(outpdf.c_str());
+      }
+      c1->Clear();
+   }
    
 }
