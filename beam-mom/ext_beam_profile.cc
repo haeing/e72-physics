@@ -12,8 +12,8 @@ const double start_pos = -900.; //Geant4 coordinate is different!! This position
 
 void ext_beam_profile(){
 
-  int mom = 735;
-  int runnumber = 2447;
+  int mom = 755;
+  int runnumber = 2680;
   
   TString dir = "/gpfs/group/had/sks/Users/haein/data/JPARC2025Nov_root/blc";
   TFile *file_track = new TFile(Form("%s/run0%d_K18Tracking.root",dir.Data(),runnumber)); //Beam

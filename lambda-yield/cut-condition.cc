@@ -302,13 +302,13 @@ void cut_condition()
   string outpdf;
   string outroot;
   if (runnumbers.size() == 1){
-    outpdf = Form("result/cut-condition-run%05d.pdf", runnumbers.front());
-    outroot = Form("result/cut-condition-run%05d.root", runnumbers.front());
+    outpdf = Form("result/cut-condition-run%05d_update.pdf", runnumbers.front());
+    outroot = Form("result/cut-condition-run%05d_update.root", runnumbers.front());
   }
   else{
-    outpdf = Form("result/cut-condition-run%05d-%05d-n%zu.pdf",
+    outpdf = Form("result/cut-condition-run%05d-%05d-n%zu_update.pdf",
                   runnumbers.front(), runnumbers.back(), runnumbers.size());
-    outroot = Form("result/cut-condition-run%05d-%05d-n%zu.root",
+    outroot = Form("result/cut-condition-run%05d-%05d-n%zu_update.root",
                   runnumbers.front(), runnumbers.back(), runnumbers.size());
   }
 
@@ -463,7 +463,7 @@ void cut_condition()
   Long64_t n_peak_cand = 0;
   Long64_t n_tight_cand = 0;
   for (int runnumber : runnumbers) {
-    TFile *file = new TFile(Form("%s/run%05d_DstTPCHelixTracking.root",
+    TFile *file = new TFile(Form("%s/run%05d_DstTPCK18HelixTracking.root",
                                  dir.c_str(), runnumber));
     if (!file || file->IsZombie()) {
       cerr << "Cannot open input file for run " << runnumber << endl;
