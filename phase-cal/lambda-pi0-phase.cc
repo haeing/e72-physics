@@ -11,7 +11,7 @@
 #include <TROOT.h>
 #include <TStyle.h>
 
-void lambda_pi0_phase(Double_t beamMomentumMeV = 735.0)
+void lambda_pi0_phase(Double_t beamMomentumMeV = 755.0)
 {
   gROOT->SetBatch(kTRUE);
   gStyle->SetOptStat(0);

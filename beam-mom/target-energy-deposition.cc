@@ -46,17 +46,21 @@ std::array<ParticleSpecies, 3> Particles()
            {"proton", "proton", mp, kGreen + 2, 22}}};
 }
 
-// Compound Z/A and I values are effective material values.  Target dimensions
-// and densities are always taken from basic-property.hh.
+// Compound Z/A and I values are effective material values.  Densities and
+// single-layer thicknesses are taken from basic-property.hh.  The assumed
+// reaction point is at the center of the LH2 volume, so only the upstream
+// target wall (one GFRP and one Kapton layer, plus two Mylar layers) and half
+// of the LH2 length contribute to the incoming-particle energy loss.
 std::array<Material, 4> TargetMaterials()
 {
-  return {{{"GFRP", gfrp_density, gfrp_thick, gfrp_layer, 0.50, 100.0,
+  return {{{"GFRP", gfrp_density, gfrp_thick, 1, 0.50, 100.0,
             kOrange + 7},
-           {"Kapton", kapton_density, kapton_thick, kapton_layer, 0.5126, 79.6,
+           {"Kapton", kapton_density, kapton_thick, 1, 0.5126, 79.6,
             kGreen + 2},
-           {"Mylar", mylar_density, mylar_thick, mylar_layer, 0.5204, 78.7,
+           {"Mylar", mylar_density, mylar_thick, 2, 0.5204, 78.7,
             kMagenta + 1},
-           {"LH2", lh2_density, lh2_thick, lh2_layer, 1.0 / 1.008, 21.8,
+           {"LH2 (to center)", lh2_density, 0.5 * lh2_thick, 1,
+            1.0 / 1.008, 21.8,
             kBlue + 1}}};
 }
 
@@ -188,7 +192,7 @@ void target_energy_deposition(double momentum_min_mev_c = 300.0,
   canvas.Divide(1, 2);
   TMultiGraph comparison;
   comparison.SetTitle(
-      "Energy deposition in the target;Initial momentum [MeV/#it{c}];Mean deposited energy [MeV]");
+      "Energy loss to the LH2 center;Initial momentum [MeV/#it{c}];Mean energy loss [MeV]");
   TLegend legend(0.66, 0.62, 0.88, 0.87);
   legend.SetBorderSize(0);
   legend.SetFillStyle(0);
@@ -197,7 +201,7 @@ void target_energy_deposition(double momentum_min_mev_c = 300.0,
   std::array<TGraph, 3> momentum_loss_graphs;
   TMultiGraph momentum_comparison;
   momentum_comparison.SetTitle(
-      "Momentum loss in the target;Initial momentum [MeV/#it{c}];#Deltap = p_{initial}-p_{exit} [MeV/#it{c}]");
+      "Momentum loss to the LH2 center;Initial momentum [MeV/#it{c}];#Deltap [MeV/#it{c}]");
   TLegend momentum_legend(0.66, 0.62, 0.88, 0.87);
   momentum_legend.SetBorderSize(0);
   momentum_legend.SetFillStyle(0);
