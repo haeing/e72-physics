@@ -1,0 +1,570 @@
+--- polarity/acceptance.cc
++++ macro/acceptance.cc
+@@ -1,17 +1,17 @@
+ static const double xmin = -1.;
+ static const double xmax = 1.;
+ static const int n_cosbin = 15;
+-static const int n_mombin = 24;
++static const int n_mombin = 15;
+ static const double step = (xmax - xmin)/(double)n_cosbin;
+ 
+-static const double mom_kaon[n_mombin] = {724., 726., 728., 730., 732., 734., 736., 738., 740., 742., 744., 746., 748., 750., 752., 754., 756., 758., 760., 762., 764., 766., 768., 770.};
++static const double mom_kaon[n_mombin] = {724., 726., 728., 730., 732., 734., 738., 742., 746., 750., 754., 758., 762., 766., 770.};
+ static const double mom_err = 1.;
+ 
+ 
+ void acceptance(){
+   gStyle->SetOptStat(0);
+   
+-  TFile *file = new TFile("../../data/7201_7202_Acceptance_study.root");
++  TFile *file = new TFile("../data/7201_7202_Acceptance_study.root");
+   //TFile *file = new TFile("../data/mom735_flat_eta_lambda.root");
+   //TFile *file = new TFile("../data/7201_7202_CSOn.root");
+   TTree *tree = (TTree*)file->Get("g4hyptpc_light");
+@@ -107,7 +107,7 @@
+   c1->SetTopMargin(0.15);
+   c1->SetBottomMargin(0.15);
+   c1->SetGrid();
+-  c1->Divide(8,3);
++  c1->Divide(5,3);
+   for(int i=0;i<n_mombin;i++){
+     c1->cd(i+1);
+     Leta_accept[i]->SetTitle(";cos#theta_{#eta}^{CM};Acceptance");
+--- polarity/yield.cc
++++ macro/yield.cc
+@@ -1,9 +1,6 @@
+-static const int n_mombin = 24;
+-static const double mom_min = 724.;
+-static const double mom_max = 770.;
+-static const double mom_step = 2.;
+-
+-double mom_kaon[n_mombin];
++static const int n_mombin = 15;
++
++static const double mom_kaon[n_mombin] = {724., 726., 728., 730., 732., 734., 738., 742., 746., 750., 754., 758., 762., 766., 770.};
+ static const double mom_kaon_err = 1.;
+ 
+ static const double mK = 493.677;          //usbar, ubars
+@@ -50,6 +47,7 @@
+ 
+ static const double E_eff = 0.8; //DAQ effciency * offline analysis efficiency
+ //static const double trigger_eff = 0.9; //HTOF,BAC,KVC
++//static const double trigger_eff = 0.78; //HTOF,BAC,KVC
+ static const double trigger_eff = 0.5;
+ static const double fraction_L = 0.64; //Lambda -> ppi
+ static const double mb_to_cm2 = 1e-27;
+@@ -89,18 +87,17 @@
+ static const double p_end = 800;
+ const int np = 100.;
+ */
++
++static const double p_start = 575;
++static const double p_end = 1003;
++const int np = 428/2;
++
+ /*
+ static const double p_start = 500;
+ static const double p_end = 1000;
+ const int np = 1000.;
++*/
+ static const double p_step = (p_end - p_start)/np;
+-*/
+-
+-static const double p_start = 575;
+-static const double p_end = 1003;
+-//static const double p_step = 0.5;
+-static const double p_step = 2;
+-const int np = (p_end - p_start)/p_step;
+ 
+ static const double display_start = 715.;
+ static const double display_end = 800.;
+@@ -111,13 +108,57 @@
+ 
+ void yield(){
+ 
+-  for(int i=0;i<n_mombin;i++){
+-    mom_kaon[i] = mom_min + i*mom_step;
+-  }
+-
+-  
+-  TFile *file_nbeam = new TFile("../data/Nbeam_251123.root","READ");
++  /*
++  cout<<pK_to_roots(745)-pK_to_roots(725.)<<endl;
++  //Beam spill calculation
++  TH1D *hist_beam[6];
++  TH1D *hist_beamf = new TH1D("hist_beamf","hist_beamf",np,p_start,p_end);
++  TGraph *spill_graph = new TGraph(3,pK_intensity,intensity);
++  
++  TF1 *f_beam[6];
++  //momentum scan
++  for(int i=0;i<5;i++){
++    hist_beam[i]= new TH1D(Form("hist_beam%d",i),Form("hist_beam%d",i),np,p_start,p_end);
++    f_beam[i] = new TF1(Form("f_beam%d",i), "gaus", beam_mom[i] - 5 * K_sigma*beam_mom[i]/K_mean, beam_mom[i] + 5 * K_sigma*beam_mom[i]/K_mean);
++    f_beam[i]->SetParameters(1, beam_mom[i], K_sigma*beam_mom[i]/K_mean);
++    double ctaup_m = 299792458*K_tau*beam_mom[i]/mK;
++    
++    hist_beam[i]->FillRandom(Form("f_beam%d",i),spill_graph->Eval(beam_mom[i])*T_scan*eff_acc*TMath::Exp(-1*lK/ctaup_m)*Rbeam);
++    hist_beamf->Add(hist_beam[i]);
++  }
++  
++  //Fix beam momentum -> 735 MeV/c
++  hist_beam[5] = new TH1D("hist_beam5","hist_beam5",np,p_start,p_end);
++  f_beam[5] = new TF1("f_beam5","gaus",beam_mom_fix -5 * K_sigma*beam_mom_fix/K_mean, beam_mom_fix + 5 * K_sigma*beam_mom_fix/K_mean);
++  f_beam[5]->SetParameters(1, beam_mom_fix, K_sigma*beam_mom_fix/K_mean);
++  double ctaup_m = 299792458*K_tau*beam_mom_fix/mK;
++  
++  hist_beam[5]->FillRandom("f_beam5",spill_graph->Eval(beam_mom_fix)*T_fix*eff_acc*TMath::Exp(-1*lK/ctaup_m)*Rbeam);
++  hist_beamf->Add(hist_beam[5]);
++
++  TCanvas *c10 = new TCanvas("c10","c10");
++  hist_beamf->Draw();
++
++  for(int i=0;i<6;i++){
++    hist_beam[i]->SetLineColor(i+1);
++    hist_beam[i]->Draw("same");
++  }
++  */
++
++  
++  TFile *file_nbeam = new TFile("data/Nbeam_251123.root","READ");
+   TH1D *hist_beamall = (TH1D*)file_nbeam->Get("hMom2");
++  TCanvas *c10 = new TCanvas("c10","c10");
++  hist_beamall->Draw();
++  double binwidth = hist_beamall->GetXaxis()->GetBinWidth(1);
++  cout<<"bin width : "<<binwidth<<endl;
++
++  double xmin = hist_beamall->GetXaxis()->GetXmin();
++  double xmax = hist_beamall->GetXaxis()->GetXmax();
++  cout<<"xmin : "<<xmin<<", xmax : "<<xmax<<endl;
++  
++
++
+   
+   
+ 
+@@ -189,7 +230,7 @@
+   double yield_err[np];
+   double lumi[np];
+   double lumi_err[np];
+-
++  
+   for(int i=0;i<np;i++){
+     double p = p_start + p_step/2. + i*p_step;
+     mom_cal[i] = p;
+@@ -197,9 +238,12 @@
+     double cs = Leta_total->Eval(p);
+     //double Nbeam_point = hist_beamf->GetBinContent(i+1);
+     double Nbeam_point = hist_beamall->GetBinContent(i+1);
++    //yield_cal[i] = Nbeam_point*Ntarget*cs*mb_to_cm2*E_eff*trigger_eff*fraction_L;
+     yield_cal[i] = Nbeam_point*Ntarget*cs*mb_to_cm2*E_eff*trigger_eff*fraction_L;
++    hist_beamall->SetBinContent(i, Nbeam_point*Ntarget*cs*mb_to_cm2*E_eff*trigger_eff*fraction_L);
+     yield_err[i] = TMath::Sqrt(yield_cal[i]);
+     lumi[i] = Nbeam_point*Ntarget*1e-27*E_eff;
++    cout<<lumi[i]<<endl;
+     lumi_err[i] = 0.;
+     
+ 
+@@ -207,36 +251,7 @@
+ 
+   TGraphErrors *yield_total = new TGraphErrors(np,mom_cal,yield_cal,mom_err,yield_err);
+   TGraphErrors *lumi_total = new TGraphErrors(np,mom_cal,lumi,mom_err,lumi_err);
+-
+-  int n_total = yield_total->GetN();
+-  double *mom_x  = yield_total->GetX();
+-  double *yield_y  = yield_total->GetY();
+-  double *mom_ex = yield_total->GetEX();
+-  double *yield_ey = yield_total->GetEY();
+-
+-  int binSize = 4; // 10개씩 묶어서 평균낸다
+-  std::vector<double> bx, by, bex, bey;
+-
+-  for (int i = 0; i < n_total; i += binSize) {
+-    int end = std::min(i+binSize, n_total);
+-    int count = end - i;
+-    
+-    double sumx=0, sumy=0, sumey2=0;
+-    for (int j = i; j < end; j++) {
+-      sumx += mom_x[j];
+-      sumy += yield_y[j];
+-      sumey2 += yield_ey[j]*yield_ey[j]; 
+-    }
+-    bx.push_back(sumx / count);
+-    by.push_back(sumy / count);
+-    bex.push_back(1);                 
+-    bey.push_back(std::sqrt(sumey2)/count); // 평균 오차
+-  }
+-
+-  TGraphErrors *gr_rebin = new TGraphErrors(bx.size(),
+-					    bx.data(), by.data(),
+-					    bex.data(), bey.data());
+-
++  
+   TCanvas *c5 = new TCanvas("c5","c5");
+   double yield_max = 35000;
+   c5->SetLeftMargin(0.15);
+@@ -244,24 +259,12 @@
+   c5->SetTopMargin(0.15);
+   c5->SetBottomMargin(0.15);
+   c5->SetGrid();
+-
+-  
+   yield_total->SetMarkerStyle(21);
+   yield_total->SetMarkerSize(0.7);
+   yield_total->GetXaxis()->SetLimits(display_start,display_end);
+   yield_total->GetYaxis()->SetRangeUser(0.,yield_max);
+-  yield_total->SetTitle(";#it{p_{K}} [MeV/#it{c}];Yield");
++  yield_total->SetTitle(";#it{p_{K}} [MeV/#it{c}];Yield / [2 MeV/c]");
+   yield_total->Draw("AP");
+-  
+-  /*
+-  gr_rebin->SetMarkerStyle(21);
+-  gr_rebin->SetMarkerSize(0.7);
+-  gr_rebin->GetXaxis()->SetLimits(display_start,display_end);
+-  gr_rebin->GetYaxis()->SetRangeUser(0.,yield_max);
+-  gr_rebin->SetTitle(";#it{p_{K}} [MeV/#it{c}];Yield");
+-  gr_rebin->Draw("AP");
+-  */
+-  
+   //show sqrt s
+   TGaxis *Ecm_axis_y = new TGaxis(display_start,yield_max,display_end,yield_max,"sqrt_s",510,"-");
+   
+@@ -279,7 +282,7 @@
+   cout<<"N_beam : "<<Nbeam<<endl;
+   cout<<"N_target : "<<Ntarget<<endl;
+   cout<<"Total yield : "<<yield_total->Integral()<<endl;
+-
++  
+ 
+   ofstream outfile("param/entry_mom.txt");
+   outfile << "#pK pK_min pK_max Entry" << "\n";
+--- polarity/diff_cross.cc
++++ macro/diff_cross.cc
+@@ -1,26 +1,17 @@
+ static const double xmin = -1.;
+ static const double xmax = 1.;
+ static const int n_cosbin = 15;
+-static const int n_mombin = 24;
++static const int n_mombin = 15;
+ static const double step = (xmax - xmin)/(double)n_cosbin;
+-static const double mom_min = 724.;
+-static const double mom_max = 770.;
+-static const double mom_step = 2.;
+ 
+-double mom_kaon[n_mombin];
+-
+-//static const double mom_kaon[n_mombin] = {724., 726., 728., 730., 732., 734., 738., 742., 746., 750., 754., 758., 762., 766., 770.};
++static const double mom_kaon[n_mombin] = {724., 726., 728., 730., 732., 734., 738., 742., 746., 750., 754., 758., 762., 766., 770.};
+ static const double mom_err = 1.;
+ 
+ 
+ void diff_cross(){
+   gStyle->SetOptStat(0);
+-
+-  for(int i=0;i<n_mombin;i++){
+-    mom_kaon[i] = mom_min + i*mom_step;
+-  }
+  
+-  TFile *file = new TFile("../../data/7201_7202_CSOn.root");
++  TFile *file = new TFile("../data/7201_7202_CSOn.root");
+   //TFile *file = new TFile("../data/7201_7202_Acceptance_study.root");
+   TTree *tree = (TTree*)file->Get("g4hyptpc_light");
+ 
+@@ -118,7 +109,7 @@
+   c1->SetTopMargin(0.15);
+   c1->SetBottomMargin(0.15);
+   c1->SetGrid();
+-  c1->Divide(8,3);
++  c1->Divide(5,3);
+   for(int i=0;i<n_mombin;i++){
+     c1->cd(i+1);
+     Leta_accept[i]->SetTitle(";cos#theta_{#Lambda}^{CM};Total Entry");
+--- polarity/polar_th.cc
++++ macro/polar_th.cc
+@@ -2,16 +2,16 @@
+ static const double xmax = 1.;
+ 
+ static const int n_cosbin = 15;
+-//static const int n_mombin = 15;
+-static const int n_mombin = 24;
++static const int n_mombin = 15;
++//static const int n_mombin = 24;
+ static const double step = (xmax - xmin)/(double)n_cosbin;
+ 
+ const int n_cos = 9;
+ 
+ const double alpha = 0.65; //Asymmetry parameter of Lambda
+ 
+-//static const double mom_kaon[n_mombin] = {724., 726., 728., 730., 732., 734., 738., 742., 746., 750., 754., 758., 762., 766., 770.};
+-static const double mom_kaon[n_mombin] = {724., 726., 728., 730., 732., 734., 736., 738., 740., 742., 744., 746., 748., 750., 752., 754., 756., 758., 760., 762., 764., 766., 768., 770.};
++static const double mom_kaon[n_mombin] = {724., 726., 728., 730., 732., 734., 738., 742., 746., 750., 754., 758., 762., 766., 770.};
++//static const double mom_kaon[n_mombin] = {724., 726., 728., 730., 732., 734., 736., 738., 740., 742., 744., 746., 748., 750., 752., 754., 756., 758., 760., 762., 764., 766., 768., 770.};
+ static const double mom_err = 1.;
+ 
+ void polar_th() {
+@@ -78,6 +78,13 @@
+     }
+   }
+   infile1.close();
++
++  double N_mom_cos_compare[n_cosbin] = {0.};
++  for(int i=0;i<10;i++){
++    for(int j=0;j<n_cosbin;j++){
++      N_mom_cos_compare[j] +=N_mom_cos[i][j];
++    }
++  }
+ 
+   TCanvas* c1 = new TCanvas("c1", "Lambda Polarization", 1000, 500);
+ 
+@@ -124,7 +131,7 @@
+       spline[mom][theory]->SetLineColor(gr->GetLineColor());
+       //spline->SetLineStyle(2);
+       spline[mom][theory]->SetLineWidth(5);
+-      //spline[mom][theory]->Draw("same");
++      spline[mom][theory]->Draw("same");
+       for(int i=0;i<n_cosbin;i++){
+ 	if(mom==0 && theory==0){
+ 	  cos_cm[i] = xmin+step/2. + step*i;
+@@ -132,7 +139,8 @@
+ 	}
+ 	model_value[mom][theory][i] = spline[mom][theory]->Eval(cos_cm[i]);
+ 	if(mom==0){
+-	  model_value_err[mom][theory][i] = sqrt(3)/(alpha*sqrt((double)N_mom_cos[5][i]));
++	  //model_value_err[mom][theory][i] = sqrt(3)/(alpha*sqrt((double)N_mom_cos[5][i]));
++	  model_value_err[mom][theory][i] = sqrt(3)/(alpha*sqrt((double)N_mom_cos_compare[i]));
+ 	}
+ 	else if(mom==1){
+ 	  model_value_err[mom][theory][i] = sqrt(3)/(alpha*sqrt((double)N_mom_cos[13][i]));
+@@ -167,24 +175,16 @@
+ 
+   for(int mom=0;mom<2;mom++){
+     c2->cd(mom+1);
+-    gPad->SetGrid();
++      gPad->SetGrid();
+     mg_model[mom]->Draw("AP");
+ 
+   }
+ 
+   TGraphErrors *gr_polar_total = new TGraphErrors();
+-  //TH2D *hist_sta = new TH2D("hist_sta","hist_sta",n_cosbin,-1,1,n_mombin,723,771);
+-  TH2D *hist_sta = new TH2D("hist_sta","hist_sta",n_mombin,723,771,n_cosbin,-1,1);
+   for(int i=0;i<n_mombin;i++){
+     //gr_polar_total->SetPoint(i,mom_kaon[i], sqrt(3)/(alpha*sqrt(N_mom_cos[i][7])));
+-    std::cout<<N_mom[i]<<std::endl;
+     gr_polar_total->SetPoint(i,mom_kaon[i], sqrt(3)/(alpha*sqrt(N_mom[i])));
+     gr_polar_total->SetPointError(i,mom_err,0);
+-    for(int j=0;j<n_cosbin;j++){
+-      //hist_sta->SetBinContent(j+1,i+1,sqrt(3)/(alpha*sqrt(N_mom_cos[j][i])));
+-      hist_sta->SetBinContent(i+1,j+1,N_mom_cos[i][j]);
+-      hist_sta->SetTitle(";#it{p}^{#it{K}}_{Lab} [MeV/#it{c}];cos#theta_{#eta}^{CM}");
+-    }
+     
+   }
+ 
+@@ -198,9 +198,6 @@
+   //gr_polar_total->SetMarkerSize(1.5);
+   gr_polar_total->SetTitle(";#it{p}^{#it{K}}_{Lab} [MeV/#it{c}];Statistical Uncertainty for P_{#Lambda}");
+   gr_polar_total->Draw("AP");
+-
+-  TCanvas *c4 = new TCanvas("c4");
+-  hist_sta->Draw("colz");
+   
+   
+   
+--- polarity/crystalball.cc
++++ macro/crystalball.cc
+@@ -48,8 +48,7 @@
+ static const double xmin = -1.;
+ static const double xmax = 1.;
+ static const int n_cosbin = 15;
+-//static const int n_mombin = 15;
+-static const int n_mombin = 24;
++static const int n_mombin = 15;
+ static const double step = (xmax - xmin)/(double)n_cosbin;
+ 
+ static const int numpK = 15;
+@@ -256,11 +255,10 @@
+ 
+ 
+     diff_graph[i]->Draw("AP");
+-    poly[i]->Draw("same");
++    //poly[i]->Draw("same");
+     //poly0[i]->Draw("same");
+   }
+ 
+-  
+   TCanvas *c2[3];
+   for(int i=0;i<3;i++){
+     c2[i]= new TCanvas(Form("c2%d",i),Form("c2%d",i),800,650);
+@@ -293,7 +291,6 @@
+   globalFit->SetParLimits(4,0.,0.1);
+   
+ 
+-  /*
+     TVirtualFitter::Fitter(0, 5);  // 5개의 파라미터 사용
+     globalFit->SetParNames("M", "Gamma", "A0_scale", "A1_scale", "A2_scale");
+ 
+@@ -330,9 +327,8 @@
+     Amp[i]->Draw("AP");
+     //    Amp[i]->Fit(f_amp[i],"","",1660,1680);
+   }
+-  */
+-
+-  
++
++
+ 
+   TGraph2D * CB2D = new TGraph2D();
+   for(int i=0;i<numpK;i++){
+@@ -354,7 +350,7 @@
+     CB2D_test->AddPoint(randpK,randcos,CB2D->Interpolate(randpK,randcos));
+   }
+ 
+-
++  /*
+   TCanvas *c3 = new TCanvas("c3","c3",800,650);
+   c3->Divide(3);
+   c3->cd(1);
+@@ -397,7 +393,7 @@
+     
+   cout<<roots_mom(mK,mp,(meta+mLambda))<<endl;
+   //cout<<roots_mom(mK,mp,1670)<<endl;
+-
++  */
+ 
+     //Calculate differential Cross Section Error
+   ifstream infile("param/luminosity_mom.txt");
+@@ -482,8 +478,6 @@
+     g_diff_exp[i] = new TGraphErrors(n_cosbin,cos_cm,diff_cs_exp[i],cos_cm_err,diff_cs_exp_err[i]);
+   }
+ 
+-  cout<<"1"<<endl;
+-  
+   TCanvas* c0 = new TCanvas("c0","c0",269,53,1369,540);
+   c0->Divide(5,3);
+   c0->SetLeftMargin(0.15);
+@@ -527,8 +521,6 @@
+     latex->DrawLatex(0.5, 0.95, Form("%.1f MeV",roots[i]));
+   }
+ 
+-  
+-
+ 
+   TCanvas *c10 = new TCanvas("c10","c10");
+   c10->SetLeftMargin(0.15);
+--- macro/yield_E72.cc
++++ macro/yield.cc
+@@ -47,7 +47,8 @@
+ 
+ static const double E_eff = 0.8; //DAQ effciency * offline analysis efficiency
+ //static const double trigger_eff = 0.9; //HTOF,BAC,KVC
+-static const double trigger_eff = 0.78; //HTOF,BAC,KVC 
++//static const double trigger_eff = 0.78; //HTOF,BAC,KVC
++static const double trigger_eff = 0.5;
+ static const double fraction_L = 0.64; //Lambda -> ppi
+ static const double mb_to_cm2 = 1e-27;
+ 
+@@ -81,10 +82,15 @@
+   return sqrt((mK*mK+pK*pK)+mp*mp+2*mp*sqrt(mK*mK+pK*pK)-pK*pK);
+ }
+ 
+-
++/*
+ static const double p_start = 600;
+ static const double p_end = 800;
+ const int np = 100.;
++*/
++
++static const double p_start = 575;
++static const double p_end = 1003;
++const int np = 428/2;
+ 
+ /*
+ static const double p_start = 500;
+@@ -100,10 +106,10 @@
+ static const double K_sigma = 13;
+ 
+ 
+-void yield_E72(){
+-  TFile *file_beam = new TFile("data/beam.k.run69_0130.root");
+-  
+-
++void yield(){
++
++  /*
++  cout<<pK_to_roots(745)-pK_to_roots(725.)<<endl;
+   //Beam spill calculation
+   TH1D *hist_beam[6];
+   TH1D *hist_beamf = new TH1D("hist_beamf","hist_beamf",np,p_start,p_end);
+@@ -137,10 +143,11 @@
+     hist_beam[i]->SetLineColor(i+1);
+     hist_beam[i]->Draw("same");
+   }
+-  /*
+-  
+-  TFile *file_nbeam = new TFile("data/n_kaon.root","READ");
+-  TH1D *hist_beamall = (TH1D*)file_nbeam->Get("mom_all");
++  */
++
++  
++  TFile *file_nbeam = new TFile("data/Nbeam_251123.root","READ");
++  TH1D *hist_beamall = (TH1D*)file_nbeam->Get("hMom2");
+   TCanvas *c10 = new TCanvas("c10","c10");
+   hist_beamall->Draw();
+   double binwidth = hist_beamall->GetXaxis()->GetBinWidth(1);
+@@ -150,7 +157,7 @@
+   double xmax = hist_beamall->GetXaxis()->GetXmax();
+   cout<<"xmin : "<<xmin<<", xmax : "<<xmax<<endl;
+   
+-  */
++
+ 
+   
+   
+@@ -223,15 +230,17 @@
+   double yield_err[np];
+   double lumi[np];
+   double lumi_err[np];
+-
++  
+   for(int i=0;i<np;i++){
+     double p = p_start + p_step/2. + i*p_step;
+     mom_cal[i] = p;
+     mom_err[i] = p_step/2.;
+     double cs = Leta_total->Eval(p);
+-    double Nbeam_point = hist_beamf->GetBinContent(i+1);
+-    //double Nbeam_point = hist_beamall->GetBinContent(i+1);
++    //double Nbeam_point = hist_beamf->GetBinContent(i+1);
++    double Nbeam_point = hist_beamall->GetBinContent(i+1);
++    //yield_cal[i] = Nbeam_point*Ntarget*cs*mb_to_cm2*E_eff*trigger_eff*fraction_L;
+     yield_cal[i] = Nbeam_point*Ntarget*cs*mb_to_cm2*E_eff*trigger_eff*fraction_L;
++    hist_beamall->SetBinContent(i, Nbeam_point*Ntarget*cs*mb_to_cm2*E_eff*trigger_eff*fraction_L);
+     yield_err[i] = TMath::Sqrt(yield_cal[i]);
+     lumi[i] = Nbeam_point*Ntarget*1e-27*E_eff;
+     cout<<lumi[i]<<endl;
+@@ -242,7 +251,7 @@
+ 
+   TGraphErrors *yield_total = new TGraphErrors(np,mom_cal,yield_cal,mom_err,yield_err);
+   TGraphErrors *lumi_total = new TGraphErrors(np,mom_cal,lumi,mom_err,lumi_err);
+-
++  
+   TCanvas *c5 = new TCanvas("c5","c5");
+   double yield_max = 35000;
+   c5->SetLeftMargin(0.15);
+@@ -254,7 +263,7 @@
+   yield_total->SetMarkerSize(0.7);
+   yield_total->GetXaxis()->SetLimits(display_start,display_end);
+   yield_total->GetYaxis()->SetRangeUser(0.,yield_max);
+-  yield_total->SetTitle(";#it{p_{K}} [MeV/#it{c}];Yield");
++  yield_total->SetTitle(";#it{p_{K}} [MeV/#it{c}];Yield / [2 MeV/c]");
+   yield_total->Draw("AP");
+   //show sqrt s
+   TGaxis *Ecm_axis_y = new TGaxis(display_start,yield_max,display_end,yield_max,"sqrt_s",510,"-");
+@@ -273,7 +282,7 @@
+   cout<<"N_beam : "<<Nbeam<<endl;
+   cout<<"N_target : "<<Ntarget<<endl;
+   cout<<"Total yield : "<<yield_total->Integral()<<endl;
+-
++  
+ 
+   ofstream outfile("param/entry_mom.txt");
+   outfile << "#pK pK_min pK_max Entry" << "\n";

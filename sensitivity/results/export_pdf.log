@@ -1,0 +1,22 @@
+2026-09-10 06:19:02.764 root[75194:4289047] Connection Invalid error for service com.apple.hiservices-xpcservice.
+2026-09-10 06:19:02.764 root[75194:4289043] Error received in message reply handler: Connection invalid
+
+Processing macro/export_pdf.C...
+Info in <TCanvas::Print>: pdf file results/sensitivity.pdf has been created
+Info in <TCanvas::Print>: Current canvas added to pdf file results/sensitivity.pdf
+Info in <TCanvas::Print>: Current canvas added to pdf file results/sensitivity.pdf
+Info in <TCanvas::Print>: Current canvas added to pdf file results/sensitivity.pdf
+Info in <TCanvas::Print>: Current canvas added to pdf file results/sensitivity.pdf
+Info in <TCanvas::Print>: Current canvas added to pdf file results/sensitivity.pdf
+Info in <TCanvas::Print>: Current canvas added to pdf file results/sensitivity.pdf
+Info in <TCanvas::Print>: Current canvas added to pdf file results/sensitivity.pdf
+Info in <TCanvas::Print>: Current canvas added to pdf file results/sensitivity.pdf
+Info in <TCanvas::Print>: Current canvas added to pdf file results/sensitivity.pdf
+Info in <TCanvas::Print>: Current canvas added to pdf file results/sensitivity.pdf
+Info in <TCanvas::Print>: Current canvas added to pdf file results/sensitivity.pdf
+Info in <TCanvas::Print>: Current canvas added to pdf file results/sensitivity.pdf
+Info in <TCanvas::Print>: Current canvas added to pdf file results/sensitivity.pdf
+Info in <TCanvas::Print>: Current canvas added to pdf file results/sensitivity.pdf
+Info in <TCanvas::Print>: Current canvas added to pdf file results/sensitivity.pdf
+Info in <TCanvas::Print>: pdf file results/sensitivity.pdf has been closed
+Saved 15 pages to results/sensitivity.pdf

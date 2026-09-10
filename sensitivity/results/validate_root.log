@@ -1,0 +1,5 @@
+2026-09-10 06:19:41.504 root[75350:4290084] Error received in message reply handler: Connection invalid
+2026-09-10 06:19:41.504 root[75350:4290089] Connection Invalid error for service com.apple.hiservices-xpcservice.
+
+Processing macro/validate_root.C...
+PASS: 60 momentum-specific graphs, yield conservation, uncertainty formulas, TXT regression

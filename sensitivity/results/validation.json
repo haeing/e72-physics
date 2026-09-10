@@ -1,0 +1,35 @@
+{
+  "data/mc/7201_7202_CSOn.root": {
+    "bytes": 75131532,
+    "sha256": "387bddad6567644b2afb62eb771832cd6059e907698ce12ae47da0a673bbbd51",
+    "matches_source": true
+  },
+  "data/mc/7201_7202_Acceptance_study.root": {
+    "bytes": 75100937,
+    "sha256": "d351aadd5441d99f95cbbfef4894fbdeb210f4bd56ac91f974df6c11f20a5eea",
+    "matches_source": true
+  },
+  "data/beam/Nbeam_251123.root": {
+    "bytes": 9041,
+    "sha256": "cd2c653448ab6ae2b2d6c8eebd994413cb86e5b1d484752cd4aceb746d3af913",
+    "matches_source": true
+  },
+  "data/beam/Nbeam_251123.csv": {
+    "bytes": 14556,
+    "sha256": "05053deb885515b9d325420ac406c6946c6d0629f6d436faafa79d1362bd5539",
+    "matches_source": true
+  },
+  "validation": {
+    "stages": 5,
+    "root_version": "6.32.08",
+    "finite_positive_values": true,
+    "angular_yield_sum_matches_momentum_yield": true,
+    "pdf_files": 1,
+    "pdf_pages": 15,
+    "pdf_path": "results/sensitivity.pdf",
+    "interchange": "ROOT TGraphErrors",
+    "momentum_graphs_checked": 60,
+    "root_formula_checks": true,
+    "txt_regression_relative_tolerance": 1e-05
+  }
+}

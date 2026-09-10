@@ -1,0 +1,4 @@
+2026-09-10 06:18:58.655 root[75170:4288863] Connection Invalid error for service com.apple.hiservices-xpcservice.
+2026-09-10 06:18:58.655 root[75170:4288859] Error received in message reply handler: Connection invalid
+
+Processing macro/run_stage.C("acceptance")...
