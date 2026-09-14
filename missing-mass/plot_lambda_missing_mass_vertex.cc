@@ -28,9 +28,9 @@
 namespace {
 // Change only this value (e.g. 715 or 755): data, acceptance, and PDF
 // names all follow it.  Add/remove run numbers below; no function arguments.
-constexpr Int_t kBeamMomentum = 735; // MeV/c
-           const std::vector<int> kRunNumbers = {2447, 2449, 2450, 2451, 2452, 2453,2454,2456,2457,2458,2459,2460,2462,2463,2465,2468}; //735
-  //    const std::vector<int> kRunNumbers = {2682,2683,2684,2686,2687,2689,2690,2691};//715
+constexpr Int_t kBeamMomentum = 715; // MeV/c
+  //           const std::vector<int> kRunNumbers = {2447, 2449, 2450, 2451, 2452, 2453,2454,2456,2457,2458,2459,2460,2462,2463,2465,2468}; //735
+      const std::vector<int> kRunNumbers = {2682,2683,2684,2686,2687,2689,2690,2691};//715
 const TString kDataDir = Form("/gpfs/home/had/haein/data/JPARC2025Nov_root/physics-%d", kBeamMomentum);
 // Display and fit settings for the #eta missing-mass peak (GeV/c^2).
 constexpr Double_t kMissingMassDisplayMax = 0.60;
@@ -214,6 +214,8 @@ void FillSelectedDataAngles(TFile& input, TH1D& selected_lambda_mass,
                             TH2D& costheta_lab_vs_lambda_mom_low,
                             TH2D& costheta_lab_vs_lambda_mom_high,
                             TH2D& beam_momentum_vs_costheta,
+                            TH2D& missing_mass_vs_lambda_mom,
+                            TH2D& missing_mass_vs_prod_beam_mom,
                             const std::vector<TH1D*>& missing_mass_by_beam,
                             const std::vector<TH1D*>& missing_mass_by_beam_lambda_cut,
                             TH1D& missing_mass_no_lambda_cut,
@@ -254,18 +256,27 @@ void FillSelectedDataAngles(TFile& input, TH1D& selected_lambda_mass,
                              lambda_px->size(), lambda_py->size(), lambda_pz->size(),
                              prod_beam_mom->size()});
     for (std::size_t i=0; i<n; ++i) {
-      if (!production_found->at(i) || !std::isfinite(x_mass->at(i)) ||
-          (kRequireLH2Inside && !IsInsideLH2(prod_x->at(i), prod_y->at(i), prod_z->at(i)))) continue;
-      const Bool_t pass_lambda_mass_window = std::isfinite(lambda_mass->at(i)) &&
-        lambda_mass->at(i) > kLambdaMassMin && lambda_mass->at(i) < kLambdaMassMax;
-      if (!pass_lambda_mass_window) continue;
-      // All selected observables use the Lambda mass window above.
+      // Vertex maps intentionally have no LH2, Lambda-mass, or M_X selection.
+      if (!production_found->at(i)) continue;
       if (std::isfinite(prod_z->at(i)) && std::isfinite(prod_x->at(i)))
         production_zx_no_mm.Fill(prod_z->at(i), prod_x->at(i));
       if (std::isfinite(prod_z->at(i)) && std::isfinite(prod_y->at(i)))
         production_zy_no_mm.Fill(prod_z->at(i), prod_y->at(i));
       if (std::isfinite(prod_x->at(i)) && std::isfinite(prod_y->at(i)))
         production_xy_no_mm.Fill(prod_x->at(i), prod_y->at(i));
+      const Bool_t vertex_high_missing_mass = std::isfinite(x_mass->at(i)) && x_mass->at(i) > kMissingMassMin;
+      if (vertex_high_missing_mass) {
+        if (std::isfinite(prod_z->at(i)) && std::isfinite(prod_x->at(i))) production_zx_high_mm.Fill(prod_z->at(i), prod_x->at(i));
+        if (std::isfinite(prod_z->at(i)) && std::isfinite(prod_y->at(i))) production_zy_high_mm.Fill(prod_z->at(i), prod_y->at(i));
+        if (std::isfinite(prod_x->at(i)) && std::isfinite(prod_y->at(i))) production_xy_high_mm.Fill(prod_x->at(i), prod_y->at(i));
+      }
+      // All non-vertex observables keep their existing LH2 and Lambda mass selection.
+      if (!std::isfinite(x_mass->at(i)) ||
+          (kRequireLH2Inside && !IsInsideLH2(prod_x->at(i), prod_y->at(i), prod_z->at(i)))) continue;
+      const Bool_t pass_lambda_mass_window = std::isfinite(lambda_mass->at(i)) &&
+        lambda_mass->at(i) > kLambdaMassMin && lambda_mass->at(i) < kLambdaMassMax;
+      if (!pass_lambda_mass_window) continue;
+      // All non-vertex observables use the Lambda mass window above.
       if (std::isfinite(lambda_mass->at(i))) selected_lambda_mass.Fill(lambda_mass->at(i));
       missing_mass_no_lambda_cut.Fill(x_mass->at(i));
       if (std::isfinite(x_mass2->at(i))) missing_mass2_no_lambda_cut.Fill(x_mass2->at(i));
@@ -283,12 +294,6 @@ void FillSelectedDataAngles(TFile& input, TH1D& selected_lambda_mass,
       const Bool_t is_high_missing_mass = x_mass->at(i) > kMissingMassMin;
       // Retain the existing 1D angular spectra as the M_X > 0.5 GeV/c^2 selection.
       if (is_high_missing_mass) {
-        if (std::isfinite(prod_z->at(i)) && std::isfinite(prod_x->at(i)))
-          production_zx_high_mm.Fill(prod_z->at(i), prod_x->at(i));
-        if (std::isfinite(prod_z->at(i)) && std::isfinite(prod_y->at(i)))
-          production_zy_high_mm.Fill(prod_z->at(i), prod_y->at(i));
-        if (std::isfinite(prod_x->at(i)) && std::isfinite(prod_y->at(i)))
-          production_xy_high_mm.Fill(prod_x->at(i), prod_y->at(i));
         if (std::isfinite(lambda_mass->at(i))) selected_lambda_mass_high_mm.Fill(lambda_mass->at(i));
         if (std::isfinite(lab_angle->at(i))) lab.Fill(lab_angle->at(i));
         if (std::isfinite(cm_angle->at(i))) angle_cm.Fill(cm_angle->at(i));
@@ -297,7 +302,9 @@ void FillSelectedDataAngles(TFile& input, TH1D& selected_lambda_mass,
           if (std::isfinite(prod_beam_mom->at(i))) beam_momentum_vs_costheta.Fill(prod_beam_mom->at(i), cm_costheta->at(i));
         }
       }
+      if (std::isfinite(prod_beam_mom->at(i))) missing_mass_vs_prod_beam_mom.Fill(x_mass->at(i), prod_beam_mom->at(i));
       const Double_t lambda_mom = std::sqrt(lambda_px->at(i)*lambda_px->at(i) + lambda_py->at(i)*lambda_py->at(i) + lambda_pz->at(i)*lambda_pz->at(i));
+      if (std::isfinite(lambda_mom)) missing_mass_vs_lambda_mom.Fill(x_mass->at(i), lambda_mom);
       // Matches lambda-eta-phase.cc: TLorentzVector::CosTheta(), i.e. pz/|p| in lab.
       if (std::isfinite(lambda_mom) && lambda_mom > 0.) {
         const Double_t costheta_lab = lambda_pz->at(i)/lambda_mom;
@@ -422,6 +429,11 @@ void plot_lambda_missing_mass_vertex()
   auto beam_momentum_vs_costheta = std::make_unique<TH2D>(
     "h_selected_lambda_beam_momentum_vs_costheta", "", kBeamMomentumBins, kBeamMomentumMin,
     kBeamMomentumMin+kBeamMomentumBins*kBeamMomentumBinWidth, kCosThetaBins, -1., 1.);
+  auto missing_mass_vs_lambda_mom = std::make_unique<TH2D>(
+    "h_missing_mass_vs_lambda_momentum", "", 300, 0., kMissingMassDisplayMax, 120, 0., 1.2);
+  auto missing_mass_vs_prod_beam_mom = std::make_unique<TH2D>(
+    "h_missing_mass_vs_production_beam_momentum", "", 300, 0., kMissingMassDisplayMax,
+    kBeamMomentumBins, kBeamMomentumMin, kBeamMomentumMin+kBeamMomentumBins*kBeamMomentumBinWidth);
   auto triggered_costheta = std::make_unique<TH1D>("h_triggered_lambda_costheta", "", kCosThetaBins, -1., 1.);
   auto missing_mass_by_beam_costheta = std::make_unique<TH3D>(
     "h_missing_mass_by_production_beam_costheta", "",
@@ -468,6 +480,7 @@ void plot_lambda_missing_mass_vertex()
     hist->SetDirectory(nullptr); hist->Sumw2();
   }
   for (auto* hist : {selected_costheta_lab_vs_lambda_mom_all.get(), selected_costheta_lab_vs_lambda_mom_low.get(), selected_costheta_lab_vs_lambda_mom_high.get(), beam_momentum_vs_costheta.get(),
+                     missing_mass_vs_lambda_mom.get(), missing_mass_vs_prod_beam_mom.get(),
                      production_zx_no_mm.get(), production_zx_high_mm.get(), production_zy_no_mm.get(), production_zy_high_mm.get(), production_xy_no_mm.get(), production_xy_high_mm.get()}) {
     hist->SetDirectory(nullptr); hist->Sumw2();
   }
@@ -482,6 +495,7 @@ void plot_lambda_missing_mass_vertex()
                            *selected_costheta_lab_vs_lambda_mom_all,
                            *selected_costheta_lab_vs_lambda_mom_low,
                            *selected_costheta_lab_vs_lambda_mom_high, *beam_momentum_vs_costheta,
+                           *missing_mass_vs_lambda_mom, *missing_mass_vs_prod_beam_mom,
                            missing_mass_by_beam, missing_mass_by_beam_lambda_cut,
                            *missing_mass_no_lambda_cut, *missing_mass_lambda_cut,
                            *missing_mass2_no_lambda_cut, *missing_mass2_lambda_cut,
@@ -696,12 +710,12 @@ void plot_lambda_missing_mass_vertex()
     canvas.Print(pdf_name);
   }
   for (const auto& item : std::vector<std::pair<TH2D*, TString>>{
-         {production_zx_no_mm.get(), Form("Reconstructed #Lambda production vertex (%s, no M_{X} cut);Z [mm];X [mm]", target_selection.Data())},
-         {production_zx_high_mm.get(), Form("Reconstructed #Lambda production vertex (%s, M_{X}>%.2f GeV/c^{2});Z [mm];X [mm]", target_selection.Data(), kMissingMassMin)},
-         {production_zy_no_mm.get(), Form("Reconstructed #Lambda production vertex (%s, no M_{X} cut);Z [mm];Y [mm]", target_selection.Data())},
-         {production_zy_high_mm.get(), Form("Reconstructed #Lambda production vertex (%s, M_{X}>%.2f GeV/c^{2});Z [mm];Y [mm]", target_selection.Data(), kMissingMassMin)},
-         {production_xy_no_mm.get(), Form("Reconstructed #Lambda production vertex (%s, no M_{X} cut);X [mm];Y [mm]", target_selection.Data())},
-         {production_xy_high_mm.get(), Form("Reconstructed #Lambda production vertex (%s, M_{X}>%.2f GeV/c^{2});X [mm];Y [mm]", target_selection.Data(), kMissingMassMin)}}) {
+         {production_zx_no_mm.get(), "Reconstructed #Lambda production vertex (no LH2/Lambda-mass/M_{X} cut);Z [mm];X [mm]"},
+         {production_zx_high_mm.get(), Form("Reconstructed #Lambda production vertex (no LH2/Lambda-mass cut, M_{X}>%.2f);Z [mm];X [mm]", kMissingMassMin)},
+         {production_zy_no_mm.get(), "Reconstructed #Lambda production vertex (no LH2/Lambda-mass/M_{X} cut);Z [mm];Y [mm]"},
+         {production_zy_high_mm.get(), Form("Reconstructed #Lambda production vertex (no LH2/Lambda-mass cut, M_{X}>%.2f);Z [mm];Y [mm]", kMissingMassMin)},
+         {production_xy_no_mm.get(), "Reconstructed #Lambda production vertex (no LH2/Lambda-mass/M_{X} cut);X [mm];Y [mm]"},
+         {production_xy_high_mm.get(), Form("Reconstructed #Lambda production vertex (no LH2/Lambda-mass cut, M_{X}>%.2f);X [mm];Y [mm]", kMissingMassMin)}}) {
     canvas.Clear();
     item.first->SetTitle(item.second);
     item.first->Draw("colz");
@@ -723,6 +737,15 @@ void plot_lambda_missing_mass_vertex()
          {selected_costheta.get(), Form("Selected #Lambda production angle (M_{X}>%.2f, %s);cos #theta_{#Lambda}^{CM};Candidates", kMissingMassMin, target_selection.Data())}}) {
     canvas.Clear(); item.first->SetTitle(item.second); item.first->SetLineColor(kRed + 1); item.first->SetLineWidth(2); item.first->Draw("hist"); canvas.Print(pdf_name);
   }
+  for (const auto& item : std::vector<std::pair<TH2D*, TString>>{
+         {missing_mass_vs_lambda_mom.get(), Form("Missing mass vs reconstructed #Lambda momentum (%s, no M_{X} cut);M_{X} [GeV/c^{2}];|#vec{p}_{#Lambda}| [GeV/c]", target_selection.Data())},
+         {missing_mass_vs_prod_beam_mom.get(), Form("Missing mass vs production-vertex K18 momentum (%s, no M_{X} cut);M_{X} [GeV/c^{2}];|#vec{p}_{K^{-}}^{prod}| [GeV/c]", target_selection.Data())}}) {
+    canvas.Clear();
+    item.first->SetTitle(item.second);
+    item.first->Draw("colz");
+    canvas.Print(pdf_name);
+  }
+
   for (const auto& item : std::vector<std::pair<TH2D*, TString>>{
          {selected_costheta_lab_vs_lambda_mom_all.get(), "all M_{X}"},
          {selected_costheta_lab_vs_lambda_mom_low.get(), Form("M_{X} #leq %.2f GeV/c^{2}", kMissingMassMin)},
