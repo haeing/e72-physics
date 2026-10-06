@@ -12,7 +12,7 @@ const double start_pos = -900.; //Geant4 coordinate is different!! This position
 
 void ext_beam_profile(){
 
-  int mom = 755;
+  int mom = 715;
   int runnumber = 2680;
   
   TString dir = "/gpfs/group/had/sks/Users/haein/data/JPARC2025Nov_root/blc";

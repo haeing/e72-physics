@@ -23,15 +23,27 @@
 #include <TTree.h>
 #include <TTreeReader.h>
 #include <TTreeReaderValue.h>
+
+#pragma cling add_include_path("/gpfs/group/had/sks/Users/haein/work/e72/ana/e72/include")
+#include "/gpfs/group/had/sks/Users/haein/work/e72/ana/e72/include/TPCPadHelper.hh"
+// Coordinate limits expected by TPCEventDisplayHelper.hh.
+const Double_t ZTarget = tpc::Z_TARGET;
+const Double_t MinZ = -250.;
+const Double_t MaxZ = 250.;
+const Double_t MinX = -250.;
+const Double_t MaxX = 250.;
+#include "/gpfs/group/had/sks/Users/haein/work/git/e72-physics/TPCEventDisplayHelper.hh"
 #include <TPaveText.h>
 
 namespace {
 // Change only this value (e.g. 715 or 755): data, acceptance, and PDF
 // names all follow it.  Add/remove run numbers below; no function arguments.
-constexpr Int_t kBeamMomentum = 715; // MeV/c
-  //           const std::vector<int> kRunNumbers = {2447, 2449, 2450, 2451, 2452, 2453,2454,2456,2457,2458,2459,2460,2462,2463,2465,2468}; //735
-      const std::vector<int> kRunNumbers = {2682,2683,2684,2686,2687,2689,2690,2691};//715
-const TString kDataDir = Form("/gpfs/home/had/haein/data/JPARC2025Nov_root/physics-%d", kBeamMomentum);
+constexpr Int_t kBeamMomentum = 735; // MeV/c
+     const std::vector<int> kRunNumbers = {2447, 2449, 2450, 2451, 2452, 2453,2454,2456,2457,2458,2459,2460,2462,2463,2465,2468}; //735
+  //  const std::vector<int> kRunNumbers = {2447};
+  //const std::vector<int> kRunNumbers = {2682,2683,2684,2686,2687,2689,2690,2691};//715
+ const TString kDataDir = Form("/gpfs/home/had/haein/data/JPARC2025Nov_root/physics-%d", kBeamMomentum);
+const TString kOutputDir = "result";
 // Display and fit settings for the #eta missing-mass peak (GeV/c^2).
 constexpr Double_t kMissingMassDisplayMax = 0.60;
 constexpr Double_t kEtaMass = 0.547862;
@@ -46,8 +58,9 @@ constexpr Double_t kMissingMassMin = 0.50; // GeV/c^2, production-vertex X_mass
 // Lambda invariant-mass window for optional missing-mass background suppression.
 constexpr Double_t kLambdaMassMin = 1.09; // GeV/c^2
 constexpr Double_t kLambdaMassMax = 1.13; // GeV/c^2
-// Toggle the reconstructed production-vertex fiducial cut for all selected plots.
-constexpr Bool_t kRequireLH2Inside = true;
+// Toggle the LH2 fiducial cut for selected yields and non-vertex plots.
+constexpr Bool_t kRequireLH2Inside = false;
+constexpr Double_t kProtonTrackProductionZMax = -220.;
 constexpr Double_t kTargetZ = -143.;       // mm
 constexpr Double_t kLH2Radius = 38.;       // mm, strict interior
 constexpr Double_t kLH2HalfLengthY = 48.;  // mm, strict interior
@@ -74,7 +87,7 @@ TString BuildPdfName()
     if (!run_tag.IsNull()) run_tag += "_";
     run_tag += Form("%05d", run);
   }
-  return Form("lambda_missing_mass_vertex_mom%d_runs%s.pdf", kBeamMomentum, run_tag.Data());
+  return Form("%s/lambda_missing_mass_vertex_mom%d_runs%s.pdf", kOutputDir.Data(), kBeamMomentum, run_tag.Data());
 }
 
 // Fit the low-mass continuum below the eta peak, then extrapolate its
@@ -220,16 +233,20 @@ void FillSelectedDataAngles(TFile& input, TH1D& selected_lambda_mass,
                             const std::vector<TH1D*>& missing_mass_by_beam_lambda_cut,
                             TH1D& missing_mass_no_lambda_cut,
                             TH1D& missing_mass_lambda_cut,
+                            TH1D& lambda_mass_proton_px_negative, TH1D& lambda_mass_proton_px_positive,
+                            TH1D& lambda_mass_proton_pz_negative, TH1D& lambda_mass_proton_pz_positive,
+                            TH1D& missing_mass_proton_px_negative, TH1D& missing_mass_proton_px_positive,
+                            TH1D& missing_mass_proton_pz_negative, TH1D& missing_mass_proton_pz_positive,
                             TH1D& missing_mass2_no_lambda_cut,
                             TH1D& missing_mass2_lambda_cut,
                             TH3D& missing_mass_by_beam_costheta)
 {
   auto* tree = dynamic_cast<TTree*>(input.Get("tpc"));
   if (!tree) return;
-  const std::array<const char*, 14> needed{{"X_mass", "X_mass2", "X_prod_found", "X_prod_vtx_x", "X_prod_vtx_y", "X_prod_vtx_z",
+  const std::array<const char*, 16> needed{{"X_mass", "X_mass2", "X_prod_found", "X_prod_vtx_x", "X_prod_vtx_y", "X_prod_vtx_z",
                                               "lambda_mass", "lambda_beam_opening_angle_lab", "lambda_production_angle_cm", "lambda_production_costheta_cm",
                                               "lambda_mom_x", "lambda_mom_y", "lambda_mom_z",
-                                              "X_prod_beam_mom"}};
+                                              "lambda_proton_mom_x", "lambda_proton_mom_z", "X_prod_beam_mom"}};
   for (const auto* name : needed) if (!tree->GetBranch(name)) {
     Warning("plot_lambda_missing_mass_vertex", "%s is absent; skip angle cuts for %s", name, input.GetName());
     return;
@@ -248,13 +265,15 @@ void FillSelectedDataAngles(TFile& input, TH1D& selected_lambda_mass,
   TTreeReaderValue<std::vector<Double_t>> lambda_px(reader, "lambda_mom_x");
   TTreeReaderValue<std::vector<Double_t>> lambda_py(reader, "lambda_mom_y");
   TTreeReaderValue<std::vector<Double_t>> lambda_pz(reader, "lambda_mom_z");
+  TTreeReaderValue<std::vector<Double_t>> proton_px(reader, "lambda_proton_mom_x");
+  TTreeReaderValue<std::vector<Double_t>> proton_pz(reader, "lambda_proton_mom_z");
   // Post-loss RK momentum at the beam--Lambda production closest approach.
   TTreeReaderValue<std::vector<Double_t>> prod_beam_mom(reader, "X_prod_beam_mom");
   while (reader.Next()) {
     const auto n = std::min({x_mass->size(), x_mass2->size(), production_found->size(), prod_x->size(), prod_y->size(), prod_z->size(),
                              lambda_mass->size(), lab_angle->size(), cm_angle->size(), cm_costheta->size(),
                              lambda_px->size(), lambda_py->size(), lambda_pz->size(),
-                             prod_beam_mom->size()});
+                             proton_px->size(), proton_pz->size(), prod_beam_mom->size()});
     for (std::size_t i=0; i<n; ++i) {
       // Vertex maps intentionally have no LH2, Lambda-mass, or M_X selection.
       if (!production_found->at(i)) continue;
@@ -273,6 +292,14 @@ void FillSelectedDataAngles(TFile& input, TH1D& selected_lambda_mass,
       // All non-vertex observables keep their existing LH2 and Lambda mass selection.
       if (!std::isfinite(x_mass->at(i)) ||
           (kRequireLH2Inside && !IsInsideLH2(prod_x->at(i), prod_y->at(i), prod_z->at(i)))) continue;
+      const Double_t ppx = proton_px->at(i);
+      const Double_t ppz = proton_pz->at(i);
+      if (std::isfinite(lambda_mass->at(i)) && std::isfinite(x_mass->at(i))) {
+        if (ppx < 0.) { lambda_mass_proton_px_negative.Fill(lambda_mass->at(i)); missing_mass_proton_px_negative.Fill(x_mass->at(i)); }
+        if (ppx > 0.) { lambda_mass_proton_px_positive.Fill(lambda_mass->at(i)); missing_mass_proton_px_positive.Fill(x_mass->at(i)); }
+        if (ppz < 0.) { lambda_mass_proton_pz_negative.Fill(lambda_mass->at(i)); missing_mass_proton_pz_negative.Fill(x_mass->at(i)); }
+        if (ppz > 0.) { lambda_mass_proton_pz_positive.Fill(lambda_mass->at(i)); missing_mass_proton_pz_positive.Fill(x_mass->at(i)); }
+      }
       const Bool_t pass_lambda_mass_window = std::isfinite(lambda_mass->at(i)) &&
         lambda_mass->at(i) > kLambdaMassMin && lambda_mass->at(i) < kLambdaMassMax;
       if (!pass_lambda_mass_window) continue;
@@ -358,6 +385,264 @@ std::unique_ptr<TH1D> MergeMassSquaredBranch(const TString& branch_name, const T
   return merged;
 }
 
+std::unique_ptr<TH2D> MergeDecayVertex2D(const TString& x_branch,
+                                             const TString& y_branch,
+                                             const TString& histogram_name)
+{
+  auto merged = std::make_unique<TH2D>(histogram_name, "", 500, -250., 250., 500, -250., 250.);
+  merged->SetDirectory(nullptr);
+  for (const int run : kRunNumbers) {
+    const TString path = Form("%s/run%05d_DstTPCLambdaEta.root", kDataDir.Data(), run);
+    std::unique_ptr<TFile> input(TFile::Open(path, "READ"));
+    if (!input || input->IsZombie()) { Warning("plot_lambda_missing_mass_vertex", "Cannot open %s", path.Data()); continue; }
+    auto* tree = dynamic_cast<TTree*>(input->Get("tpc"));
+    if (!tree || !tree->GetBranch(x_branch) || !tree->GetBranch(y_branch)) {
+      Warning("plot_lambda_missing_mass_vertex", "%s/%s is absent in run %05d", x_branch.Data(), y_branch.Data(), run);
+      continue;
+    }
+    TTreeReader reader(tree);
+    TTreeReaderValue<std::vector<Double_t>> x(reader, x_branch);
+    TTreeReaderValue<std::vector<Double_t>> y(reader, y_branch);
+    while (reader.Next()) {
+      const auto n = std::min(x->size(), y->size());
+      for (std::size_t i = 0; i < n; ++i)
+        if (std::isfinite(x->at(i)) && std::isfinite(y->at(i))) merged->Fill(x->at(i), y->at(i));
+    }
+  }
+  return merged;
+}
+
+std::unique_ptr<TH2D> MergeDecayVertex2DByProductionZ(const TString& x_branch,
+                                                       const TString& y_branch,
+                                                       const TString& histogram_name,
+                                                       Bool_t below, Double_t z_cut)
+{
+  auto merged = std::make_unique<TH2D>(histogram_name, "", 500, -250., 250., 500, -250., 250.);
+  merged->SetDirectory(nullptr);
+  for (const int run : kRunNumbers) {
+    const TString path = Form("%s/run%05d_DstTPCLambdaEta.root", kDataDir.Data(), run);
+    std::unique_ptr<TFile> input(TFile::Open(path, "READ"));
+    if (!input || input->IsZombie()) continue;
+    auto* tree = dynamic_cast<TTree*>(input->Get("tpc"));
+    if (!tree || !tree->GetBranch(x_branch) || !tree->GetBranch(y_branch) || !tree->GetBranch("X_prod_vtx_z")) continue;
+    TTreeReader reader(tree);
+    TTreeReaderValue<std::vector<Double_t>> x(reader, x_branch);
+    TTreeReaderValue<std::vector<Double_t>> y(reader, y_branch);
+    TTreeReaderValue<std::vector<Double_t>> production_z(reader, "X_prod_vtx_z");
+    while (reader.Next()) {
+      const auto n = std::min({x->size(), y->size(), production_z->size()});
+      for (std::size_t i = 0; i < n; ++i) {
+        if (!std::isfinite(x->at(i)) || !std::isfinite(y->at(i)) || !std::isfinite(production_z->at(i))) continue;
+        const Bool_t pass = below ? production_z->at(i) < z_cut : production_z->at(i) >= z_cut;
+        if (pass) merged->Fill(x->at(i), y->at(i));
+      }
+    }
+  }
+  return merged;
+}
+
+struct PionDzDiagnostics {
+  std::unique_ptr<TH1D> all;
+  std::unique_ptr<TH1D> beamlike_pass;
+  std::unique_ptr<TH1D> beamlike_fail;
+};
+
+PionDzDiagnostics MergePionDzDiagnostics(Bool_t below, Double_t production_z_cut)
+{
+  PionDzDiagnostics result;
+  result.all = std::make_unique<TH1D>("h_lambda_pion_helix_dz_prod_below", "", 240, -0.30, 0.30);
+  result.beamlike_pass = std::make_unique<TH1D>("h_lambda_pion_helix_dz_beamlike_pass_prod_below", "", 240, -0.30, 0.30);
+  result.beamlike_fail = std::make_unique<TH1D>("h_lambda_pion_helix_dz_beamlike_fail_prod_below", "", 240, -0.30, 0.30);
+  for (TH1D* hist : {result.all.get(), result.beamlike_pass.get(), result.beamlike_fail.get()}) hist->SetDirectory(nullptr);
+  constexpr Double_t kBeamLikeMaxAbsDzTPC = 0.05;
+  for (const int run : kRunNumbers) {
+    const TString path = Form("%s/run%05d_DstTPCLambdaEta.root", kDataDir.Data(), run);
+    std::unique_ptr<TFile> input(TFile::Open(path, "READ"));
+    if (!input || input->IsZombie()) continue;
+    auto* tree = dynamic_cast<TTree*>(input->Get("tpc"));
+    if (!tree || !tree->GetBranch("X_prod_vtx_z") || !tree->GetBranch("lambda_pion_track_id") ||
+        !tree->GetBranch("charge") || !tree->GetBranch("helix_dz")) continue;
+    TTreeReader reader(tree);
+    TTreeReaderValue<std::vector<Double_t>> production_z(reader, "X_prod_vtx_z");
+    TTreeReaderValue<std::vector<Int_t>> pion_id(reader, "lambda_pion_track_id");
+    TTreeReaderValue<std::vector<Int_t>> charge(reader, "charge");
+    TTreeReaderValue<std::vector<Double_t>> helix_dz(reader, "helix_dz");
+    while (reader.Next()) {
+      const auto ncandidate = std::min(production_z->size(), pion_id->size());
+      for (std::size_t i = 0; i < ncandidate; ++i) {
+        if (!std::isfinite(production_z->at(i))) continue;
+        const Bool_t pass_region = below ? production_z->at(i) < production_z_cut : production_z->at(i) >= production_z_cut;
+        if (!pass_region) continue;
+        const Int_t id = pion_id->at(i);
+        if (id < 0 || static_cast<std::size_t>(id) >= charge->size() || static_cast<std::size_t>(id) >= helix_dz->size()) continue;
+        const Double_t dz = helix_dz->at(id);
+        if (!std::isfinite(dz)) continue;
+        result.all->Fill(dz);
+        const Bool_t beamlike = charge->at(id) < 0 && TMath::Abs(dz) < kBeamLikeMaxAbsDzTPC;
+        (beamlike ? result.beamlike_pass : result.beamlike_fail)->Fill(dz);
+      }
+    }
+  }
+  return result;
+}
+
+std::unique_ptr<TH2Poly> MergeTrackPadMap(Bool_t proton, Bool_t below,
+                                          Double_t production_z_cut)
+{
+  const char* particle = proton ? "proton" : "pion";
+  const char* id_branch = proton ? "lambda_proton_track_id" : "lambda_pion_track_id";
+  auto map = std::unique_ptr<TH2Poly>(
+    tpcdisp::MakeTPCPadMap(Form("h_%s_track_pad_map_%s", particle, below ? "below" : "above"), ""));
+  map->SetDirectory(nullptr);
+  for (const int run : kRunNumbers) {
+    const TString path = Form("%s/run%05d_DstTPCLambdaEta.root", kDataDir.Data(), run);
+    std::unique_ptr<TFile> input(TFile::Open(path, "READ"));
+    if (!input || input->IsZombie()) { Warning("plot_lambda_missing_mass_vertex", "Cannot open %s", path.Data()); continue; }
+    auto* tree = dynamic_cast<TTree*>(input->Get("tpc"));
+    if (!tree || !tree->GetBranch("X_prod_vtx_z") || !tree->GetBranch(id_branch) ||
+        !tree->GetBranch("hitlayer") || !tree->GetBranch("track_cluster_row_center")) {
+      Warning("plot_lambda_missing_mass_vertex", "%s track branches are absent in run %05d", particle, run);
+      continue;
+    }
+    TTreeReader reader(tree);
+    TTreeReaderValue<std::vector<Double_t>> production_z(reader, "X_prod_vtx_z");
+    TTreeReaderValue<std::vector<Int_t>> track_id(reader, id_branch);
+    TTreeReaderValue<std::vector<std::vector<Double_t>>> hit_layer(reader, "hitlayer");
+    TTreeReaderValue<std::vector<std::vector<Double_t>>> hit_row(reader, "track_cluster_row_center");
+    while (reader.Next()) {
+      const auto ncandidate = std::min(production_z->size(), track_id->size());
+      for (std::size_t i = 0; i < ncandidate; ++i) {
+        if (!std::isfinite(production_z->at(i))) continue;
+        const Bool_t pass_region = below
+          ? production_z->at(i) < production_z_cut
+          : production_z->at(i) >= production_z_cut;
+        if (!pass_region) continue;
+        const Int_t id = track_id->at(i);
+        if (id < 0 || static_cast<std::size_t>(id) >= hit_layer->size() || static_cast<std::size_t>(id) >= hit_row->size()) continue;
+        const auto nhit = std::min(hit_layer->at(id).size(), hit_row->at(id).size());
+        for (std::size_t ih = 0; ih < nhit; ++ih) {
+          if (!std::isfinite(hit_layer->at(id).at(ih)) || !std::isfinite(hit_row->at(id).at(ih))) continue;
+          const Int_t layer = static_cast<Int_t>(std::lround(hit_layer->at(id).at(ih)));
+          const Int_t row = static_cast<Int_t>(std::lround(hit_row->at(id).at(ih)));
+          if (layer < 0 || layer >= NumOfLayersTPC || row < 0) continue;
+          const Int_t pad_id = tpc::GetPadId(layer, row);
+          if (pad_id >= 0) map->SetBinContent(pad_id + 1, map->GetBinContent(pad_id + 1) + 1.);
+        }
+      }
+    }
+  }
+  return map;
+}
+
+std::unique_ptr<TH2Poly> MergeFlagTrackPadMap(const TString& category)
+{
+  auto map = std::unique_ptr<TH2Poly>(tpcdisp::MakeTPCPadMap(Form("h_tpc_track_pad_map_%s", category.Data()), ""));
+  map->SetDirectory(nullptr);
+  for (const int run : kRunNumbers) {
+    const TString path = Form("%s/run%05d_DstTPCLambdaEta.root", kDataDir.Data(), run);
+    std::unique_ptr<TFile> input(TFile::Open(path, "READ"));
+    if (!input || input->IsZombie()) continue;
+    auto* tree = dynamic_cast<TTree*>(input->Get("tpc"));
+    if (!tree || !tree->GetBranch("is_beam") || !tree->GetBranch("is_k18") || !tree->GetBranch("is_accidental") || !tree->GetBranch("hitlayer") || !tree->GetBranch("track_cluster_row_center")) continue;
+    TTreeReader reader(tree);
+    TTreeReaderValue<std::vector<Int_t>> is_beam(reader, "is_beam");
+    TTreeReaderValue<std::vector<Int_t>> is_k18(reader, "is_k18");
+    TTreeReaderValue<std::vector<Int_t>> is_accidental(reader, "is_accidental");
+    TTreeReaderValue<std::vector<std::vector<Double_t>>> hit_layer(reader, "hitlayer");
+    TTreeReaderValue<std::vector<std::vector<Double_t>>> hit_row(reader, "track_cluster_row_center");
+    while (reader.Next()) {
+      const auto ntrack = std::min({is_beam->size(), is_k18->size(), is_accidental->size(), hit_layer->size(), hit_row->size()});
+      for (std::size_t id = 0; id < ntrack; ++id) {
+        const Bool_t k18 = is_k18->at(id) != 0, beam = is_beam->at(id) != 0, accidental = is_accidental->at(id) != 0;
+        const Bool_t selected = (category == "k18" && k18) || (category == "beam" && !k18 && beam) || (category == "accidental" && !k18 && !beam && accidental) || (category == "other" && !k18 && !beam && !accidental);
+        if (!selected) continue;
+        const auto nhit = std::min(hit_layer->at(id).size(), hit_row->at(id).size());
+        for (std::size_t ih = 0; ih < nhit; ++ih) {
+          if (!std::isfinite(hit_layer->at(id).at(ih)) || !std::isfinite(hit_row->at(id).at(ih))) continue;
+          const Int_t layer = static_cast<Int_t>(std::lround(hit_layer->at(id).at(ih)));
+          const Int_t row = static_cast<Int_t>(std::lround(hit_row->at(id).at(ih)));
+          if (layer < 0 || layer >= NumOfLayersTPC || row < 0) continue;
+          const Int_t pad_id = tpc::GetPadId(layer, row);
+          if (pad_id >= 0) map->SetBinContent(pad_id + 1, map->GetBinContent(pad_id + 1) + 1.);
+        }
+      }
+    }
+  }
+  return map;
+}
+
+std::unique_ptr<TH2D> MergeProductionVertexZX(Bool_t below, Double_t z_cut)
+{
+  auto merged = std::make_unique<TH2D>(
+    below ? "h_lambda_production_vertex_zx_below" : "h_lambda_production_vertex_zx_above",
+    "", 500, -250., 250., 500, -250., 250.);
+  merged->SetDirectory(nullptr);
+  for (const int run : kRunNumbers) {
+    const TString path = Form("%s/run%05d_DstTPCLambdaEta.root", kDataDir.Data(), run);
+    std::unique_ptr<TFile> input(TFile::Open(path, "READ"));
+    if (!input || input->IsZombie()) { Warning("plot_lambda_missing_mass_vertex", "Cannot open %s", path.Data()); continue; }
+    auto* tree = dynamic_cast<TTree*>(input->Get("tpc"));
+    if (!tree || !tree->GetBranch("X_prod_vtx_x") || !tree->GetBranch("X_prod_vtx_z")) {
+      Warning("plot_lambda_missing_mass_vertex", "Production vertex branches are absent in run %05d", run);
+      continue;
+    }
+    TTreeReader reader(tree);
+    TTreeReaderValue<std::vector<Double_t>> prod_x(reader, "X_prod_vtx_x");
+    TTreeReaderValue<std::vector<Double_t>> prod_z(reader, "X_prod_vtx_z");
+    while (reader.Next()) {
+      const auto n = std::min(prod_x->size(), prod_z->size());
+      for (std::size_t i = 0; i < n; ++i) {
+        if (!std::isfinite(prod_x->at(i)) || !std::isfinite(prod_z->at(i))) continue;
+        const Bool_t pass = below ? prod_z->at(i) < z_cut : prod_z->at(i) >= z_cut;
+        if (pass) merged->Fill(prod_z->at(i), prod_x->at(i));
+      }
+    }
+  }
+  return merged;
+}
+
+std::unique_ptr<TH2D> MergeSelectedPidDEMap(Bool_t proton, Bool_t below,
+                                                Double_t production_z_cut)
+{
+  const char* particle = proton ? "proton" : "pion";
+  const char* id_branch = proton ? "lambda_proton_track_id" : "lambda_pion_track_id";
+  auto map = std::make_unique<TH2D>(
+    Form("h_%s_pid_dedx_vs_charge_mom_%s", particle, below ? "below" : "above"), "",
+    240, -1.2, 1.2, 200, 0., 100.);
+  map->SetDirectory(nullptr);
+  for (const int run : kRunNumbers) {
+    const TString path = Form("%s/run%05d_DstTPCLambdaEta.root", kDataDir.Data(), run);
+    std::unique_ptr<TFile> input(TFile::Open(path, "READ"));
+    if (!input || input->IsZombie()) { Warning("plot_lambda_missing_mass_vertex", "Cannot open %s", path.Data()); continue; }
+    auto* tree = dynamic_cast<TTree*>(input->Get("tpc"));
+    if (!tree || !tree->GetBranch("X_prod_vtx_z") || !tree->GetBranch(id_branch) ||
+        !tree->GetBranch("charge") || !tree->GetBranch("mom0") || !tree->GetBranch("dEdx")) {
+      Warning("plot_lambda_missing_mass_vertex", "PID branches are absent in run %05d", run);
+      continue;
+    }
+    TTreeReader reader(tree);
+    TTreeReaderValue<std::vector<Double_t>> production_z(reader, "X_prod_vtx_z");
+    TTreeReaderValue<std::vector<Int_t>> track_id(reader, id_branch);
+    TTreeReaderValue<std::vector<Int_t>> charge(reader, "charge");
+    TTreeReaderValue<std::vector<Double_t>> mom0(reader, "mom0");
+    TTreeReaderValue<std::vector<Double_t>> dedx(reader, "dEdx");
+    while (reader.Next()) {
+      const auto ncandidate = std::min(production_z->size(), track_id->size());
+      for (std::size_t i = 0; i < ncandidate; ++i) {
+        if (!std::isfinite(production_z->at(i))) continue;
+        const Bool_t pass_region = below ? production_z->at(i) < production_z_cut : production_z->at(i) >= production_z_cut;
+        if (!pass_region) continue;
+        const Int_t id = track_id->at(i);
+        if (id < 0 || static_cast<std::size_t>(id) >= charge->size() ||
+            static_cast<std::size_t>(id) >= mom0->size() || static_cast<std::size_t>(id) >= dedx->size()) continue;
+        if (std::isfinite(mom0->at(id)) && std::isfinite(dedx->at(id)))
+          map->Fill(charge->at(id) * mom0->at(id), dedx->at(id));
+      }
+    }
+  }
+  return map;
+}
+
 std::unique_ptr<TH1> MergeHistogram(const TString& histogram_name)
 {
   std::unique_ptr<TH1> merged;
@@ -385,6 +670,7 @@ std::unique_ptr<TH1> MergeHistogram(const TString& histogram_name)
 void plot_lambda_missing_mass_vertex()
 {
   gStyle->SetOptStat(0);
+  gSystem->mkdir(kOutputDir, kTRUE);
   const TString pdf_name = BuildPdfName();
   const TString target_selection = LH2SelectionLabel();
   // Use only the RK beam momentum at the reconstructed Lambda production vertex.
@@ -393,6 +679,33 @@ void plot_lambda_missing_mass_vertex()
   auto production_mass2 = MergeMassSquaredBranch("X_mass2", "h_missing_mass2_production");
   auto dca = MergeHistogram("LambdaEta_BeamLambdaProductionDCA");
   auto production_zx = MergeHistogram("LambdaEta_ProductionVtxZX");
+  auto decay_vtx_x = MergeHistogram("LambdaEta_VtxX");
+  auto decay_vtx_y = MergeHistogram("LambdaEta_VtxY");
+  auto decay_vtx_z = MergeHistogram("LambdaEta_VtxZ");
+  auto decay_vtx_zx = MergeDecayVertex2D("X_vtx_z", "X_vtx_x", "h_lambda_decay_vertex_zx");
+  auto decay_vtx_zy = MergeDecayVertex2D("X_vtx_z", "X_vtx_y", "h_lambda_decay_vertex_zy");
+  auto decay_vtx_xy = MergeDecayVertex2D("X_vtx_x", "X_vtx_y", "h_lambda_decay_vertex_xy");
+  auto decay_vtx_zx_below = MergeDecayVertex2DByProductionZ("X_vtx_z", "X_vtx_x", "h_lambda_decay_vertex_zx_prod_below", true, kProtonTrackProductionZMax);
+  auto decay_vtx_zx_above = MergeDecayVertex2DByProductionZ("X_vtx_z", "X_vtx_x", "h_lambda_decay_vertex_zx_prod_above", false, kProtonTrackProductionZMax);
+  auto decay_vtx_zy_below = MergeDecayVertex2DByProductionZ("X_vtx_z", "X_vtx_y", "h_lambda_decay_vertex_zy_prod_below", true, kProtonTrackProductionZMax);
+  auto decay_vtx_zy_above = MergeDecayVertex2DByProductionZ("X_vtx_z", "X_vtx_y", "h_lambda_decay_vertex_zy_prod_above", false, kProtonTrackProductionZMax);
+  auto decay_vtx_xy_below = MergeDecayVertex2DByProductionZ("X_vtx_x", "X_vtx_y", "h_lambda_decay_vertex_xy_prod_below", true, kProtonTrackProductionZMax);
+  auto decay_vtx_xy_above = MergeDecayVertex2DByProductionZ("X_vtx_x", "X_vtx_y", "h_lambda_decay_vertex_xy_prod_above", false, kProtonTrackProductionZMax);
+  auto production_vtx_zx_below = MergeProductionVertexZX(true, kProtonTrackProductionZMax);
+  auto production_vtx_zx_above = MergeProductionVertexZX(false, kProtonTrackProductionZMax);
+  auto proton_track_pad_map_below = MergeTrackPadMap(true, true, kProtonTrackProductionZMax);
+  auto proton_track_pad_map_above = MergeTrackPadMap(true, false, kProtonTrackProductionZMax);
+  auto pion_track_pad_map_below = MergeTrackPadMap(false, true, kProtonTrackProductionZMax);
+  auto pion_track_pad_map_above = MergeTrackPadMap(false, false, kProtonTrackProductionZMax);
+  auto proton_pid_dedx_below = MergeSelectedPidDEMap(true, true, kProtonTrackProductionZMax);
+  auto proton_pid_dedx_above = MergeSelectedPidDEMap(true, false, kProtonTrackProductionZMax);
+  auto pion_pid_dedx_below = MergeSelectedPidDEMap(false, true, kProtonTrackProductionZMax);
+  auto pion_pid_dedx_above = MergeSelectedPidDEMap(false, false, kProtonTrackProductionZMax);
+  auto pion_dz_diagnostics = MergePionDzDiagnostics(true, kProtonTrackProductionZMax);
+  auto k18_track_pad_map = MergeFlagTrackPadMap("k18");
+  auto beam_track_pad_map = MergeFlagTrackPadMap("beam");
+  auto accidental_track_pad_map = MergeFlagTrackPadMap("accidental");
+  auto other_track_pad_map = MergeFlagTrackPadMap("other");
   auto opening_lab = MergeHistogram("LambdaEta_LambdaBeamOpeningAngleLab");
   auto angle_cm = MergeHistogram("LambdaEta_LambdaProductionAngleCM");
   auto costheta_cm = MergeHistogram("LambdaEta_LambdaProductionCosThetaCM");
@@ -407,18 +720,26 @@ void plot_lambda_missing_mass_vertex()
     "h_selected_lambda_invariant_mass", "", 240, 1.08, 1.20);
   auto selected_lambda_mass_high_mm = std::make_unique<TH1D>(
     "h_selected_lambda_invariant_mass_high_mm", "", 240, 1.08, 1.20);
+  auto lambda_mass_proton_px_negative = std::make_unique<TH1D>("h_lambda_mass_proton_px_negative", "", 240, 1.08, 1.20);
+  auto lambda_mass_proton_px_positive = std::make_unique<TH1D>("h_lambda_mass_proton_px_positive", "", 240, 1.08, 1.20);
+  auto lambda_mass_proton_pz_negative = std::make_unique<TH1D>("h_lambda_mass_proton_pz_negative", "", 240, 1.08, 1.20);
+  auto lambda_mass_proton_pz_positive = std::make_unique<TH1D>("h_lambda_mass_proton_pz_positive", "", 240, 1.08, 1.20);
+  auto missing_mass_proton_px_negative = std::make_unique<TH1D>("h_missing_mass_proton_px_negative", "", 300, 0., kMissingMassDisplayMax);
+  auto missing_mass_proton_px_positive = std::make_unique<TH1D>("h_missing_mass_proton_px_positive", "", 300, 0., kMissingMassDisplayMax);
+  auto missing_mass_proton_pz_negative = std::make_unique<TH1D>("h_missing_mass_proton_pz_negative", "", 300, 0., kMissingMassDisplayMax);
+  auto missing_mass_proton_pz_positive = std::make_unique<TH1D>("h_missing_mass_proton_pz_positive", "", 300, 0., kMissingMassDisplayMax);
   auto production_zx_no_mm = std::make_unique<TH2D>(
-    "h_production_vtx_zx_no_mm", "", 500, -250., 250., 500, -250., 250.);
+    "h_production_vtx_zx_no_mm", "", 500, -280., 280., 500, -280., 280.);
   auto production_zx_high_mm = std::make_unique<TH2D>(
-    "h_production_vtx_zx_high_mm", "", 500, -250., 250., 500, -250., 250.);
+    "h_production_vtx_zx_high_mm", "", 500, -280., 280., 500, -280., 280.);
   auto production_zy_no_mm = std::make_unique<TH2D>(
-    "h_production_vtx_zy_no_mm", "", 500, -250., 250., 500, -250., 250.);
+    "h_production_vtx_zy_no_mm", "", 500, -280., 280., 500, -280., 280.);
   auto production_zy_high_mm = std::make_unique<TH2D>(
-    "h_production_vtx_zy_high_mm", "", 500, -250., 250., 500, -250., 250.);
+    "h_production_vtx_zy_high_mm", "", 500, -280., 280., 500, -280., 280.);
   auto production_xy_no_mm = std::make_unique<TH2D>(
-    "h_production_vtx_xy_no_mm", "", 500, -250., 250., 500, -250., 250.);
+    "h_production_vtx_xy_no_mm", "", 500, -280., 280., 500, -280., 280.);
   auto production_xy_high_mm = std::make_unique<TH2D>(
-    "h_production_vtx_xy_high_mm", "", 500, -250., 250., 500, -250., 250.);
+    "h_production_vtx_xy_high_mm", "", 500, -280., 280., 500, -280., 280.);
   auto selected_lab = std::make_unique<TH1D>("h_selected_lambda_lab", "", 180, 0., 180.);
   auto selected_cm = std::make_unique<TH1D>("h_selected_lambda_cm", "", 180, 0., 180.);
   auto selected_costheta = std::make_unique<TH1D>("h_selected_lambda_costheta", "", kCosThetaBins, -1., 1.);
@@ -476,7 +797,10 @@ void plot_lambda_missing_mass_vertex()
     missing_mass_by_beam_lambda_cut.push_back(cut_histogram.get());
     missing_mass_by_beam_lambda_cut_storage.push_back(std::move(cut_histogram));
   }
-  for (auto* hist : {lambda_flight_length_all.get(), lambda_ctau_all.get(), selected_lambda_mass.get(), selected_lambda_mass_high_mm.get(), selected_lab.get(), selected_cm.get(), selected_costheta.get(), generated_costheta.get(), triggered_costheta.get()}) {
+  for (auto* hist : {lambda_flight_length_all.get(), lambda_ctau_all.get(), selected_lambda_mass.get(), selected_lambda_mass_high_mm.get(),
+                    lambda_mass_proton_px_negative.get(), lambda_mass_proton_px_positive.get(), lambda_mass_proton_pz_negative.get(), lambda_mass_proton_pz_positive.get(),
+                    missing_mass_proton_px_negative.get(), missing_mass_proton_px_positive.get(), missing_mass_proton_pz_negative.get(), missing_mass_proton_pz_positive.get(),
+                    selected_lab.get(), selected_cm.get(), selected_costheta.get(), generated_costheta.get(), triggered_costheta.get()}) {
     hist->SetDirectory(nullptr); hist->Sumw2();
   }
   for (auto* hist : {selected_costheta_lab_vs_lambda_mom_all.get(), selected_costheta_lab_vs_lambda_mom_low.get(), selected_costheta_lab_vs_lambda_mom_high.get(), beam_momentum_vs_costheta.get(),
@@ -498,6 +822,10 @@ void plot_lambda_missing_mass_vertex()
                            *missing_mass_vs_lambda_mom, *missing_mass_vs_prod_beam_mom,
                            missing_mass_by_beam, missing_mass_by_beam_lambda_cut,
                            *missing_mass_no_lambda_cut, *missing_mass_lambda_cut,
+                           *lambda_mass_proton_px_negative, *lambda_mass_proton_px_positive,
+                           *lambda_mass_proton_pz_negative, *lambda_mass_proton_pz_positive,
+                           *missing_mass_proton_px_negative, *missing_mass_proton_px_positive,
+                           *missing_mass_proton_pz_negative, *missing_mass_proton_pz_positive,
                            *missing_mass2_no_lambda_cut, *missing_mass2_lambda_cut,
                            *missing_mass_by_beam_costheta);
   }
@@ -631,6 +959,120 @@ void plot_lambda_missing_mass_vertex()
   lambda_ctau_all->SetLineWidth(2);
   lambda_ctau_all->Draw("hist");
   canvas.Print(pdf_name);
+
+  canvas.Clear();
+  decay_vtx_zx->SetTitle("#Lambda decay vertex distribution;Z_{decay} [mm];X_{decay} [mm]");
+  decay_vtx_zx->Draw("colz");
+  canvas.Print(pdf_name);
+  canvas.Clear();
+  decay_vtx_zy->SetTitle("#Lambda decay vertex distribution;Z_{decay} [mm];Y_{decay} [mm]");
+  decay_vtx_zy->Draw("colz");
+  canvas.Print(pdf_name);
+  canvas.Clear();
+  decay_vtx_xy->SetTitle("#Lambda decay vertex distribution;X_{decay} [mm];Y_{decay} [mm]");
+  decay_vtx_xy->Draw("colz");
+  canvas.Print(pdf_name);
+  for (const auto& item : std::vector<std::pair<TH2D*, TString>>{
+         {decay_vtx_zx_below.get(), Form("#Lambda decay vertex, Z_{prod} < %.0f mm;Z_{decay} [mm];X_{decay} [mm]", kProtonTrackProductionZMax)},
+         {decay_vtx_zx_above.get(), Form("#Lambda decay vertex, Z_{prod} >= %.0f mm;Z_{decay} [mm];X_{decay} [mm]", kProtonTrackProductionZMax)},
+         {decay_vtx_zy_below.get(), Form("#Lambda decay vertex, Z_{prod} < %.0f mm;Z_{decay} [mm];Y_{decay} [mm]", kProtonTrackProductionZMax)},
+         {decay_vtx_zy_above.get(), Form("#Lambda decay vertex, Z_{prod} >= %.0f mm;Z_{decay} [mm];Y_{decay} [mm]", kProtonTrackProductionZMax)},
+         {decay_vtx_xy_below.get(), Form("#Lambda decay vertex, Z_{prod} < %.0f mm;X_{decay} [mm];Y_{decay} [mm]", kProtonTrackProductionZMax)},
+         {decay_vtx_xy_above.get(), Form("#Lambda decay vertex, Z_{prod} >= %.0f mm;X_{decay} [mm];Y_{decay} [mm]", kProtonTrackProductionZMax)}}) {
+    if (!item.first) continue;
+    canvas.Clear();
+    item.first->SetTitle(item.second);
+    item.first->Draw("colz");
+    canvas.Print(pdf_name);
+  }
+  auto draw_track_pad_map = [&](TH2Poly& map, const TString& title) {
+    canvas.Clear();
+    map.SetTitle(title);
+    map.SetMinimum(0.5);
+    map.Draw("colz");
+    tpcdisp::DrawTarget();
+    tpcdisp::DrawTargetHolder();
+    canvas.Print(pdf_name);
+  };
+  canvas.Clear();
+  production_vtx_zx_below->SetTitle(Form("Production vertex, Z_{prod} < %.0f mm;Z_{prod} [mm];X_{prod} [mm]", kProtonTrackProductionZMax));
+  production_vtx_zx_below->Draw("colz");
+  canvas.Print(pdf_name);
+  canvas.Clear();
+  production_vtx_zx_above->SetTitle(Form("Production vertex, Z_{prod} >= %.0f mm;Z_{prod} [mm];X_{prod} [mm]", kProtonTrackProductionZMax));
+  production_vtx_zx_above->Draw("colz");
+  canvas.Print(pdf_name);
+
+  draw_track_pad_map(*proton_track_pad_map_below, Form("Proton tracks, Z_{prod} < %.0f mm;Z [mm];X [mm]", kProtonTrackProductionZMax));
+  draw_track_pad_map(*proton_track_pad_map_above, Form("Proton tracks, Z_{prod} >= %.0f mm;Z [mm];X [mm]", kProtonTrackProductionZMax));
+  draw_track_pad_map(*pion_track_pad_map_below, Form("Pion tracks, Z_{prod} < %.0f mm;Z [mm];X [mm]", kProtonTrackProductionZMax));
+  draw_track_pad_map(*pion_track_pad_map_above, Form("Pion tracks, Z_{prod} >= %.0f mm;Z [mm];X [mm]", kProtonTrackProductionZMax));
+  auto draw_pid_dedx = [&](TH2D& hist, const TString& title) {
+    canvas.Clear();
+    hist.SetTitle(Form("%s;charge #times p_{0} [GeV/c];dE/dx", title.Data()));
+    hist.Draw("colz");
+    canvas.Print(pdf_name);
+  };
+  draw_pid_dedx(*proton_pid_dedx_below, Form("Proton PID, Z_{prod} < %.0f mm", kProtonTrackProductionZMax));
+  draw_pid_dedx(*proton_pid_dedx_above, Form("Proton PID, Z_{prod} >= %.0f mm", kProtonTrackProductionZMax));
+  draw_pid_dedx(*pion_pid_dedx_below, Form("Pion PID, Z_{prod} < %.0f mm", kProtonTrackProductionZMax));
+  draw_pid_dedx(*pion_pid_dedx_above, Form("Pion PID, Z_{prod} >= %.0f mm", kProtonTrackProductionZMax));
+  pion_dz_diagnostics.all->SetTitle("Pion candidate helix dz, Z_{prod} < -220 mm;helix dz;Candidates");
+  pion_dz_diagnostics.all->SetLineColor(kBlack);
+  pion_dz_diagnostics.all->Draw("hist");
+  canvas.Print(pdf_name);
+  canvas.Clear();
+  pion_dz_diagnostics.beamlike_pass->SetTitle("Pion candidate beam-like criterion pass;helix dz;Candidates");
+  pion_dz_diagnostics.beamlike_pass->SetLineColor(kRed);
+  pion_dz_diagnostics.beamlike_pass->Draw("hist");
+  canvas.Print(pdf_name);
+  canvas.Clear();
+  pion_dz_diagnostics.beamlike_fail->SetTitle("Pion candidate beam-like criterion fail;helix dz;Candidates");
+  pion_dz_diagnostics.beamlike_fail->SetLineColor(kBlue);
+  pion_dz_diagnostics.beamlike_fail->Draw("hist");
+  canvas.Print(pdf_name);
+  draw_track_pad_map(*k18_track_pad_map, "K18-tagged TPC tracks;Z [mm];X [mm]");
+  draw_track_pad_map(*beam_track_pad_map, "Beam-tagged TPC tracks (non-K18);Z [mm];X [mm]");
+  draw_track_pad_map(*accidental_track_pad_map, "Accidental TPC tracks (non-K18/beam);Z [mm];X [mm]");
+  draw_track_pad_map(*other_track_pad_map, "Other TPC tracks (no K18/beam/accidental flag);Z [mm];X [mm]");
+
+  for (const auto& item : std::vector<std::pair<TH1*, TString>>{
+         {decay_vtx_x.get(), "#Lambda decay vertex X;X_{decay} [mm];Candidates"},
+         {decay_vtx_y.get(), "#Lambda decay vertex Y;Y_{decay} [mm];Candidates"},
+         {decay_vtx_z.get(), "#Lambda decay vertex Z;Z_{decay} [mm];Candidates"}}) {
+    if (!item.first) continue;
+    canvas.Clear();
+    item.first->SetTitle(item.second);
+    item.first->SetLineColor(kBlue + 1);
+    item.first->SetLineWidth(2);
+    item.first->Draw("hist");
+    canvas.Print(pdf_name);
+  }
+
+  auto draw_sign_comparison = [&](TH1D& negative, TH1D& positive, const TString& title,
+                                  const TString& x_title, const TString& negative_label, const TString& positive_label) {
+    canvas.Clear();
+    negative.SetTitle(Form("%s;%s;Counts", title.Data(), x_title.Data()));
+    negative.SetLineColor(kBlue + 1); negative.SetLineWidth(2);
+    positive.SetLineColor(kRed + 1); positive.SetLineWidth(2);
+    negative.SetMaximum(1.15 * std::max(negative.GetMaximum(), positive.GetMaximum()));
+    negative.Draw("hist"); positive.Draw("hist same");
+    TLegend legend(.58, .74, .88, .88);
+    legend.SetBorderSize(0); legend.SetFillStyle(0);
+    legend.AddEntry(&negative, negative_label, "l");
+    legend.AddEntry(&positive, positive_label, "l");
+    legend.Draw();
+    canvas.Print(pdf_name);
+  };
+  draw_sign_comparison(*lambda_mass_proton_px_negative, *lambda_mass_proton_px_positive,
+                       "#Lambda invariant mass: proton p_{x}^{lab} sign", "M_{p#pi^{-}} [GeV/c^{2}]", "p_{x}^{lab}<0", "p_{x}^{lab}>0");
+  draw_sign_comparison(*lambda_mass_proton_pz_negative, *lambda_mass_proton_pz_positive,
+                       "#Lambda invariant mass: proton p_{z}^{lab} sign", "M_{p#pi^{-}} [GeV/c^{2}]", "p_{z}^{lab}<0", "p_{z}^{lab}>0");
+  draw_sign_comparison(*missing_mass_proton_px_negative, *missing_mass_proton_px_positive,
+                       "Missing mass: proton p_{x}^{lab} sign", "M_{X} [GeV/c^{2}]", "p_{x}^{lab}<0", "p_{x}^{lab}>0");
+  draw_sign_comparison(*missing_mass_proton_pz_negative, *missing_mass_proton_pz_positive,
+                       "Missing mass: proton p_{z}^{lab} sign", "M_{X} [GeV/c^{2}]", "p_{z}^{lab}<0", "p_{z}^{lab}>0");
+
   // Presentation spectrum. Numerical background subtraction for yields is kept separate and not drawn.
   production->SetTitle("Missing mass: LH2 inside, 1.09<M_{p#pi^{-}}<1.13;M_{X} [GeV/c^{2}];Counts / 2 MeV/c^{2}");
   // continuum with a straight line, then fit the background-subtracted eta core.
@@ -851,5 +1293,34 @@ void plot_lambda_missing_mass_vertex()
     }
   }
   canvas.Print(pdf_name + "]");
-  Info("plot_lambda_missing_mass_vertex", "Wrote %s", pdf_name.Data());
+
+  TString root_name = pdf_name;
+  root_name.ReplaceAll(".pdf", ".root");
+  TFile output_root(root_name, "RECREATE");
+  std::vector<TObject*> output_objects = {
+    production.get(), production_mass2.get(), dca.get(), production_zx.get(), production_vtx_zx_below.get(), production_vtx_zx_above.get(), decay_vtx_zx.get(), decay_vtx_zy.get(), decay_vtx_xy.get(),
+    decay_vtx_zx_below.get(), decay_vtx_zx_above.get(), decay_vtx_zy_below.get(), decay_vtx_zy_above.get(),
+    decay_vtx_xy_below.get(), decay_vtx_xy_above.get(),
+    proton_track_pad_map_below.get(), proton_track_pad_map_above.get(),
+    pion_track_pad_map_below.get(), pion_track_pad_map_above.get(),
+    proton_pid_dedx_below.get(), proton_pid_dedx_above.get(), pion_pid_dedx_below.get(), pion_pid_dedx_above.get(),
+    pion_dz_diagnostics.all.get(), pion_dz_diagnostics.beamlike_pass.get(), pion_dz_diagnostics.beamlike_fail.get(),
+    k18_track_pad_map.get(), beam_track_pad_map.get(), accidental_track_pad_map.get(), other_track_pad_map.get(), decay_vtx_x.get(), decay_vtx_y.get(), decay_vtx_z.get(), opening_lab.get(), angle_cm.get(), costheta_cm.get(),
+    lambda_flight_length_all.get(), lambda_ctau_all.get(), selected_lambda_mass.get(), selected_lambda_mass_high_mm.get(),
+    lambda_mass_proton_px_negative.get(), lambda_mass_proton_px_positive.get(), lambda_mass_proton_pz_negative.get(), lambda_mass_proton_pz_positive.get(),
+    missing_mass_proton_px_negative.get(), missing_mass_proton_px_positive.get(), missing_mass_proton_pz_negative.get(), missing_mass_proton_pz_positive.get(),
+    production_zx_no_mm.get(), production_zx_high_mm.get(), production_zy_no_mm.get(), production_zy_high_mm.get(), production_xy_no_mm.get(), production_xy_high_mm.get(),
+    selected_lab.get(), selected_cm.get(), selected_costheta.get(), selected_costheta_lab_vs_lambda_mom_all.get(), selected_costheta_lab_vs_lambda_mom_low.get(),
+    selected_costheta_lab_vs_lambda_mom_high.get(), generated_costheta.get(), triggered_costheta.get(), beam_momentum_vs_costheta.get(),
+    missing_mass_vs_lambda_mom.get(), missing_mass_vs_prod_beam_mom.get(), missing_mass_by_beam_costheta.get(), missing_mass_no_lambda_cut.get(),
+    missing_mass_lambda_cut.get(), missing_mass2_no_lambda_cut.get(), missing_mass2_lambda_cut.get(), lambda_eta_yield_by_beam.get(),
+    beam_momentum_yield_raw.get(), beam_momentum_yield_corrected.get(), acceptance.get(), selected_costheta_corrected.get(),
+    lambda_eta_yield_by_beam_costheta.get(), beam_momentum_yield_expected_all_runs.get()};
+  for (TObject* object : output_objects) if (object) object->Write();
+  for (auto* histogram : missing_mass_by_beam) if (histogram) histogram->Write();
+  for (auto* histogram : missing_mass_by_beam_lambda_cut) if (histogram) histogram->Write();
+  canvas.Write("c_missing_mass_vertex");
+  output_root.Write();
+  output_root.Close();
+  Info("plot_lambda_missing_mass_vertex", "Wrote %s and %s", pdf_name.Data(), root_name.Data());
 }

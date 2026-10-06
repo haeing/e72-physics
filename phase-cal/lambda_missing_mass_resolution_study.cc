@@ -225,7 +225,7 @@ void lambda_missing_mass_resolution_study()
       legend.AddEntry(components[i].get(), kReactions[i].label, "l");
       if (show_fit) { (*fits)[i]->Draw("same"); legend.AddEntry((*fits)[i].get(), kReactions[i].label + " Gaussian core", "l"); }
     }
-    legend.Draw();
+    //legend.Draw();
     if (show_fit) {
       TPaveText label(.14, .70, .50, .88, "NDC");
       label.SetBorderSize(0); label.SetFillStyle(0); label.SetTextAlign(12); label.SetTextSize(.027);
@@ -237,14 +237,14 @@ void lambda_missing_mass_resolution_study()
     canvas.Clear();
   };
   draw_overlay(*truth_mass, truth_mass_by_reaction,
-               "Truth missing mass (no resolution);M_{X}(#Lambda) [GeV/c^{2}];Events / 1 MeV/c^{2}", nullptr, false);
+               "Truth missing mass (no resolution);M_{X} [GeV/c^{2}];Events / 1 MeV/c^{2}", nullptr, false);
   draw_overlay(*smeared_mass, smeared_mass_by_reaction,
-               Form("Smeared missing mass: #sigma_{p}/p = %.1f%% (p), %.1f%% (#pi), %.1f%% (K^{-});M_{X}(#Lambda) [GeV/c^{2}];Events / 1 MeV/c^{2}",
+               Form("Smeared missing mass: #sigma_{p}/p = %.1f%% (p), %.1f%% (#pi), %.1f%% (K^{-});M_{X} [GeV/c^{2}];Events / 1 MeV/c^{2}",
                     100.*kProtonRelativeMomentumSigma, 100.*kPionRelativeMomentumSigma, 100.*kBeamRelativeMomentumSigma), &mass_fits, true);
   draw_overlay(*truth_mass2, truth_mass2_by_reaction,
-               "Truth missing mass squared (no resolution);M_{X}^{2}(#Lambda) [(GeV/c^{2})^{2}];Events / 0.001 (GeV/c^{2})^{2}", nullptr, false);
+               "Truth missing mass squared (no resolution);M_{X}^{2} [(GeV/c^{2})^{2}];Events / 0.001 (GeV/c^{2})^{2}", nullptr, false);
   draw_overlay(*smeared_mass2, smeared_mass2_by_reaction,
-               "Smeared missing mass squared;M_{X}^{2}(#Lambda) [(GeV/c^{2})^{2}];Events / 0.001 (GeV/c^{2})^{2}", &mass2_fits, true);
+               "Smeared missing mass squared;M_{X}^{2} [(GeV/c^{2})^{2}];Events / 0.001 (GeV/c^{2})^{2}", &mass2_fits, true);
 
   auto smeared_lambda_lab_phase_space_all = std::unique_ptr<TH2D>(
     dynamic_cast<TH2D*>(smeared_lambda_lab_phase_space[0]->Clone(
