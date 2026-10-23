@@ -62,8 +62,8 @@ static const double gfrp_density = 1.9;
 static const double kapton_density = 1.42;
 static const double mylar_density = 1.4;
 
-//static const double lh2_thick = 80;
-static const double lh2_thick = 71.39;
+static const double lh2_thick = 80;
+//static const double lh2_thick = 71.39;
 
 static const double gfrp_thick = 1.5;
 static const double kapton_thick = 0.25;
