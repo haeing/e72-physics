@@ -1,3 +1,5 @@
+#include <TGraph.h>
+
 void lambda_eta_phase() {
   gROOT->SetBatch(kTRUE);
   gStyle->SetOptStat(0);
@@ -29,7 +31,7 @@ void lambda_eta_phase() {
    TGenPhaseSpace event1;
    event1.SetDecay(W, 2, masses1);
  
-   TH2F *h2 = new TH2F("h2","h2", 200,0.9,1, 200,0,1);
+   TH2F *h2 = new TH2F("h2","h2", 200,0.,10., 200,0,1);
    TH2F *h3 = new TH2F("h3","h3", 200,0.9,1, 200,0,1);
 
    TH2F *h4 = new TH2F("h4","h4", 200,0.9,1, 200,0,1);
@@ -39,6 +41,12 @@ void lambda_eta_phase() {
 
    TH2F *h8 = new TH2F("h8","h8", 200,0.,1, 200,0.,0.7);
 
+   TH2F *hProtonPionMomentum = new TH2F("h_lambda_proton_pion_momentum",
+      "p-#pi^{-} from #Lambda: lab momentum;p_{p}^{lab} [GeV/#it{c}];p_{#pi^{-}}^{lab} [GeV/#it{c}]",
+      240, 0., 1., 200, 0., .4);
+   TH1F *hOpeningAngle = new TH1F("h_lambda_p_pi_opening_angle",
+      "p-#pi^{-} from #Lambda: lab opening angle;#theta_{p#pi^{-}}^{lab} [degree];Counts",
+      180, 0., 180.);
    const Int_t nParticles = 7;
    const Int_t nMomentumComponents = 4;
    const char *particleNames[nParticles] = {
@@ -91,6 +99,8 @@ void lambda_eta_phase() {
       TLorentzVector *pP_lam = event2.GetDecay(0);
       TLorentzVector *pPi_lam = event2.GetDecay(1);
 	
+      hProtonPionMomentum->Fill(pP_lam->P(),pPi_lam->P());
+      hOpeningAngle->Fill(pP_lam->Vect().Angle(pPi_lam->Vect())*TMath::RadToDeg());
       h4->Fill(pP_lam->CosTheta(),pP_lam->P());
 
       h5->Fill(pPi_lam->CosTheta(),pPi_lam->P());
@@ -135,7 +145,7 @@ void lambda_eta_phase() {
  
  
 
-      h2->Fill(pLambda_ori->CosTheta(),pLambda_ori->P());
+      h2->Fill(pLambda_ori->Theta()*TMath::RadToDeg(),pLambda_ori->P());
       h3->Fill(peta_ori->CosTheta(),peta_ori->P());
  
    }
@@ -151,10 +161,54 @@ void lambda_eta_phase() {
    c1->Clear();
 
   
-   h2->SetTitle("#Lambda;cos#theta;momentum [GeV/#it{c}]");
+   h2->SetTitle("#Lambda;#theta_{#Lambda}^{lab} [degree];momentum [GeV/#it{c}]");
    h2->Draw("colz");
    c1->Print(outpdf.c_str());
    c1->Clear();
+
+   // Exact two-body kinematic limit for K- p -> Lambda eta, target at rest.
+   // theta is measured between the incident K- and outgoing Lambda in lab.
+   // Use the same masses as the phase-space simulation above (GeV).
+   const Double_t scanMinMeV = 710., scanMaxMeV = 770.;
+   const Int_t scanSteps = 600;
+   auto maximumLambdaAngle = [&](Double_t beamP) -> Double_t {
+      const Double_t totalE = TMath::Sqrt(beamP*beamP + Km*Km) + Pm;
+      const Double_t s = totalE*totalE - beamP*beamP;
+      if (s < (Lambdam+etam)*(Lambdam+etam)) return -1.;
+      const Double_t rootS = TMath::Sqrt(s);
+      const Double_t q = TMath::Sqrt(TMath::Max(0.,
+         (s-TMath::Power(Lambdam+etam,2)) *
+         (s-TMath::Power(Lambdam-etam,2)))) / (2.*rootS);
+      const Double_t energyCM = TMath::Sqrt(q*q + Lambdam*Lambdam);
+      const Double_t boostMomentum = beamP/totalE * energyCM;
+      if (q > boostMomentum) return 180.;
+      if (q == boostMomentum) return 90.;
+      // Maximizing atan2(q sin(thetaCM), gamma(q cos(thetaCM)+beta E_CM))
+      // gives sin(thetaLabMax) = q sqrt(s)/(pBeam mLambda).
+      return TMath::ASin(TMath::Min(1., q*rootS/(beamP*Lambdam))) * TMath::RadToDeg();
+   };
+   TGraph maxAngleGraph;
+   const Double_t thresholdEnergy =
+      (TMath::Power(Lambdam+etam,2)-Km*Km-Pm*Pm)/(2.*Pm);
+   const Double_t thresholdMeV = 1000.*TMath::Sqrt(thresholdEnergy*thresholdEnergy-Km*Km);
+   if (thresholdMeV >= scanMinMeV && thresholdMeV <= scanMaxMeV)
+      maxAngleGraph.SetPoint(0,thresholdMeV,0.);
+   for (Int_t i = 0; i <= scanSteps; ++i) {
+      const Double_t momentumMeV = scanMinMeV + (scanMaxMeV-scanMinMeV)*i/scanSteps;
+      const Double_t angle = maximumLambdaAngle(momentumMeV/1000.);
+      // Below the Lambda-eta threshold there is no physical scattering angle.
+      if (angle >= 0.) maxAngleGraph.SetPoint(maxAngleGraph.GetN(),momentumMeV,angle);
+   }
+   maxAngleGraph.SetTitle("K^{-}p #rightarrow #Lambda#eta: maximum lab scattering angle;p_{K^{-}}^{lab} [MeV/c];#theta_{#Lambda,max}^{lab} [degree]");
+   maxAngleGraph.SetLineColor(kBlue+1);
+   maxAngleGraph.SetLineWidth(3);
+   maxAngleGraph.SetMinimum(0.);
+   maxAngleGraph.Draw("AL");
+   maxAngleGraph.GetXaxis()->SetLimits(scanMinMeV,scanMaxMeV);
+   c1->Print(outpdf.c_str());
+   c1->Clear();
+   Info("lambda_eta_phase", "Maximum Lambda lab angle at %.1f MeV/c: %.6f degree",
+        pk*1000., maximumLambdaAngle(pk));
    
    h3->SetMarkerColor(kBlack);
    h3->SetTitle("#eta;cos#theta;momentum [GeV/#it{c}]");
@@ -189,6 +243,15 @@ void lambda_eta_phase() {
    h8->SetMarkerColor(kBlack);
    h8->SetTitle("#pi^- from #eta;cos#theta;momentum [GeV/#it{c}]");
    h8->Draw("colz");
+   c1->Print(outpdf.c_str());
+   c1->Clear();
+
+   hProtonPionMomentum->Draw("colz");
+   c1->Print(outpdf.c_str());
+   c1->Clear();
+
+   hOpeningAngle->SetLineWidth(2);
+   hOpeningAngle->Draw("hist");
    c1->Print(outpdf.c_str());
    c1->Clear();
 

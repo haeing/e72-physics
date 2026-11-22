@@ -56,11 +56,14 @@ void lambda_eta_momentum_offset_study(
     const char* outputPdf = "lambda_eta_momentum_offset_725MeV.pdf",
     bool allowedRegionOnly = false, bool constrainLambdaMass = true,
     double angleOffsetMinMrad = -20., double angleOffsetMaxMrad = 20.,
-    int angleOffsetPoints = 81) {
+    int angleOffsetPoints = 81,
+    double daughterAngleMinDeg = -10., double daughterAngleMaxDeg = 10.) {
   using namespace eta_offset;
   if (!std::isfinite(angleOffsetMinMrad) || !std::isfinite(angleOffsetMaxMrad) ||
       angleOffsetMaxMrad<=angleOffsetMinMrad || angleOffsetPoints<2)
     throw std::runtime_error("Invalid opening-angle offset scan");
+  if (!std::isfinite(daughterAngleMinDeg) || !std::isfinite(daughterAngleMaxDeg) || daughterAngleMaxDeg<=daughterAngleMinDeg)
+    throw std::runtime_error("Invalid daughter opening-angle scan");
   const char* lambdaLabel = constrainLambdaMass ? "#Lambda_{PDG}" : "(p#pi^{-})_{reco}";
   auto missingLambda = [&](const TLorentzVector& daughters) {
     return constrainLambdaMass ? Four(daughters.Vect(), kLambdaMass) : daughters;
@@ -620,5 +623,151 @@ void lambda_eta_momentum_offset_study(
   for (int j=0;j<angleOffsetPoints;++j)
     if (j==0 || j==angleOffsetPoints/2 || j==angleOffsetPoints-1)
       Info("eta_angle_offset","offset %+.2f mrad: undefined M_X %lld",angleOffsetMinMrad+j*angleStep,angleUndefined[j]);
-  angleCanvas.Print(TString(outputPdf) + "]");
+  // Internal p-pi opening-angle bias: proton fixed, pion rotated in their plane.
+  // Unlike the common beam-Lambda rotation, this changes M(p pi) and |p_Lambda|.
+  // Separate degree range, same smeared events, no extra noise.
+  const double daughterStep=(daughterAngleMaxDeg-daughterAngleMinDeg)/(angleOffsetPoints-1);
+  const double daughterYmin=daughterAngleMinDeg-daughterStep/2.;
+  const double daughterYmax=daughterAngleMaxDeg+daughterStep/2.;
+  TH2D daughterAngleLambda("eta_daughter_angle_lambda",
+    "p-#pi^{-} angle offset: reconstructed #Lambda;M(p#pi^{-}) [GeV/c^{2}];#delta#theta_{p#pi^{-}} [degree]",
+    400,1.08,1.16,angleOffsetPoints,daughterYmin,daughterYmax);
+  TH2D daughterAngleMissing("eta_daughter_angle_missing",
+    Form("p-#pi^{-} angle offset: missing mass (%s);M_{X} [GeV/c^{2}];#delta#theta_{p#pi^{-}} [degree]",lambdaLabel),
+    400,.48,.60,angleOffsetPoints,daughterYmin,daughterYmax);
+  daughterAngleLambda.SetDirectory(nullptr);daughterAngleMissing.SetDirectory(nullptr);
+  formatLambdaAxis(daughterAngleLambda.GetXaxis());
+  std::vector<Long64_t> daughterUndefined(angleOffsetPoints,0),daughterUnphysical(angleOffsetPoints,0);
+  std::vector<double> daughterLambdaShift(angleOffsetPoints,0.),daughterMissingShift(angleOffsetPoints,0.);
+  std::vector<Long64_t> daughterValid(angleOffsetPoints,0),daughterMissingValid(angleOffsetPoints,0);
+  for(const auto& e:smearedEvents) {
+    if(e.proton<0. || e.pion<0. || e.beam<0.)continue;
+    const auto proton=Four(e.protonDirection*e.proton,kProtonMass);
+    const auto pion=Four(e.pionDirection*e.pion,kPionMass);
+    const double opening=e.protonDirection.Angle(e.pionDirection);
+    auto axis=e.protonDirection.Cross(e.pionDirection);
+    if(axis.Mag2()<1.e-24)axis=e.protonDirection.Orthogonal();
+    axis=axis.Unit();
+    const auto incoming=Four(TVector3(0.,0.,e.beam),kKaonMass)+Four(TVector3(),kProtonMass);
+    const auto baselineLambda=proton+pion;
+    const auto baselineMissing=incoming-missingLambda(baselineLambda);
+    for(int j=0;j<angleOffsetPoints;++j) {
+      const double offset=daughterAngleMinDeg+j*daughterStep;
+      const double shiftedOpening=opening+offset*std::acos(-1.)/180.;
+      // A scalar opening angle must stay in [0,pi]; do not clip or fold it.
+      if(shiftedOpening<0. || shiftedOpening>std::acos(-1.)) {++daughterUnphysical[j];continue;}
+      auto rotatedPion=pion;rotatedPion.Rotate(offset*std::acos(-1.)/180.,axis);
+      const auto lambda=proton+rotatedPion;
+      const double expectedM2=kProtonMass*kProtonMass+kPionMass*kPionMass+
+        2.*(proton.E()*pion.E()-proton.P()*pion.P()*std::cos(shiftedOpening));
+      if(std::abs(lambda.M2()-expectedM2)>1.e-10)
+        throw std::runtime_error("Daughter opening-angle mass formula failed");
+      const auto missing=incoming-missingLambda(lambda);
+      if(std::abs(offset)<1.e-12 && std::abs(missing.M2()-baselineMissing.M2())>1.e-10)
+        throw std::runtime_error("Zero daughter-angle offset changed missing mass");
+      daughterAngleLambda.Fill(lambda.M(),offset);
+      daughterLambdaShift[j]+=lambda.M()-baselineLambda.M();++daughterValid[j];
+      if(missing.M2()<0.) {++daughterUndefined[j];continue;}
+      const double mass=std::sqrt(missing.M2());daughterAngleMissing.Fill(mass,offset);
+      if(baselineMissing.M2()>=0.) {
+        daughterMissingShift[j]+=mass-std::sqrt(baselineMissing.M2());++daughterMissingValid[j];
+      }
+    }
+  }
+  angleCanvas.Clear();angleCanvas.Divide(2,1);
+  TLine daughterLambdaLine(kLambdaMass,daughterYmin,kLambdaMass,daughterYmax);
+  TLine daughterEtaLine(kEtaMass,daughterYmin,kEtaMass,daughterYmax);
+  for(auto* line:{&daughterLambdaLine,&daughterEtaLine}){line->SetLineColor(kRed);line->SetLineWidth(1);}
+  for(int panel=0;panel<2;++panel) {
+    angleCanvas.cd(panel+1);gPad->SetLeftMargin(.16);gPad->SetRightMargin(.18);gPad->SetBottomMargin(.15);
+    (panel==0 ? daughterAngleLambda:daughterAngleMissing).Draw("colz");
+    (panel==0 ? daughterLambdaLine:daughterEtaLine).Draw("same");
+  }
+  angleCanvas.Print(outputPdf);
+  for(int j=0;j<angleOffsetPoints;++j)
+    if(j==0 || j==angleOffsetPoints/2 || j==angleOffsetPoints-1)
+      Info("eta_daughter_angle_offset","offset %+.2f degree: mean Lambda shift %+.4f MeV/c^2, mean M_X shift %+.4f MeV/c^2; undefined M_X %lld; invalid opening angles %lld",
+        daughterAngleMinDeg+j*daughterStep,daughterValid[j] ? 1000.*daughterLambdaShift[j]/daughterValid[j]:0.,
+        daughterMissingValid[j] ? 1000.*daughterMissingShift[j]/daughterMissingValid[j]:0.,daughterUndefined[j],daughterUnphysical[j]);
+  // Compare angular two-body momentum solutions against daughter-sum momentum.
+  // Both physical solutions contribute; never choose the nearest y value.
+  auto angularSolutions=[&](double pk,double cosine) {
+    std::vector<double> roots;
+    const double E=std::hypot(pk,kKaonMass)+kProtonMass;
+    const double s=E*E-pk*pk;
+    if(s<std::pow(kLambdaMass+kEtaMass,2))return roots;
+    const double B=pk*cosine,C=(s+kLambdaMass*kLambdaMass-kEtaMass*kEtaMass)/2.;
+    const double a=E*E-B*B,b=-2.*B*C,c=E*E*kLambdaMass*kLambdaMass-C*C;
+    double D=b*b-4.*a*c;if(D < -1.e-12)return roots;D=std::max(0.,D);
+    for(double sign:{-1.,1.}) {
+      const double p=(-b+sign*std::sqrt(D))/(2.*a);
+      if(p<0. || std::abs(E*std::hypot(p,kLambdaMass)-B*p-C)>1.e-8)continue;
+      if(roots.empty() || std::abs(p-roots.back())>1.e-10)roots.push_back(p);
+    }
+    return roots;
+  };
+  TCanvas momentumCompareCanvas("c_eta_momentum_compare_offsets","Lambda momentum estimators with offsets",1600,1400);
+  TString momentumLogPdf(outputPdf);
+  if(momentumLogPdf.EndsWith(".pdf"))momentumLogPdf.Remove(momentumLogPdf.Length()-4);
+  momentumLogPdf+="_momentum_comparison_log.pdf";
+  momentumCompareCanvas.Print(momentumLogPdf+"[");
+  // Three magnitude-offset pages, plus beam-Lambda and p-pi angular offsets.
+  for(int mode=0;mode<5;++mode) {
+    std::array<std::unique_ptr<TH2D>,4> comparisons;
+    std::array<Long64_t,4> noSolution{{0,0,0,0}},invalid{{0,0,0,0}};
+    for(int panel=0;panel<4;++panel) {
+      TString title;
+      if(mode<3)title=scenarioTitle(mode,panel);
+      else {
+        const double value=panel==0 ? (mode==3 ? angleOffsetMinMrad:daughterAngleMinDeg):
+                           panel==1 ? 0. : panel==2 ? (mode==3 ? angleOffsetMaxMrad:daughterAngleMaxDeg):0.;
+        if(panel==3)title="Combined: p -20, #pi -20, K +20 MeV/c";
+        else title=Form("%s offset %+.1f %s",mode==3 ? "K^{-}-#Lambda angle":"p-#pi^{-} angle",value,mode==3 ? "mrad":"degree");
+      }
+      comparisons[panel].reset(new TH2D(Form("eta_momentum_compare_%d_%d",mode,panel),
+        Form("%s;p_{#Lambda}^{beam,#theta} [GeV/c];p_{#Lambda}^{p#pi^{-}} [GeV/c]",title.Data()),300,.3,.8,300,.3,.8));
+      comparisons[panel]->SetDirectory(nullptr);
+      for(const auto& e:smearedEvents) {
+        const auto offsets=scenarioOffsets(mode<3 ? mode:0,panel==3 ? 3: (mode<3 ? panel:1));
+        const double p=e.proton+offsets[0],pi=e.pion+offsets[1],pk=e.beam+offsets[2];
+        if(p<0. || pi<0. || pk<0.){++invalid[panel];continue;}
+        auto proton=Four(e.protonDirection*p,kProtonMass),pion=Four(e.pionDirection*pi,kPionMass);
+        if(mode>=3 && panel!=3) {
+          const double value=panel==0 ? (mode==3 ? angleOffsetMinMrad:daughterAngleMinDeg):
+                             panel==1 ? 0. : (mode==3 ? angleOffsetMaxMrad:daughterAngleMaxDeg);
+          const double rotation=mode==3 ? value*.001:value*std::acos(-1.)/180.;
+          if(mode==3) {
+            auto axis=TVector3(0.,0.,1.).Cross((proton+pion).Vect());
+            if(axis.Mag2()<1.e-24)axis=TVector3(0.,1.,0.);axis=axis.Unit();
+            proton.Rotate(rotation,axis);pion.Rotate(rotation,axis);
+          } else {
+            const double opening=e.protonDirection.Angle(e.pionDirection)+rotation;
+            if(opening<0. || opening>std::acos(-1.)){++invalid[panel];continue;}
+            auto axis=e.protonDirection.Cross(e.pionDirection);
+            if(axis.Mag2()<1.e-24)axis=e.protonDirection.Orthogonal();axis=axis.Unit();
+            pion.Rotate(rotation,axis);
+          }
+        }
+        const auto lambda=proton+pion;
+        const auto solutions=angularSolutions(pk,lambda.CosTheta());
+        if(solutions.empty()){++noSolution[panel];continue;}
+        for(double solution:solutions)comparisons[panel]->Fill(solution,lambda.P());
+      }
+    }
+    double maximum=0.;for(auto& h:comparisons)maximum=std::max(maximum,h->GetMaximum());
+    for(bool logarithmic:{false,true}) {
+    momentumCompareCanvas.Divide(2,2);
+    std::array<TLine,4> diagonals;
+    for(int panel=0;panel<4;++panel) {
+      momentumCompareCanvas.cd(panel+1);gPad->SetLeftMargin(.16);gPad->SetRightMargin(.18);gPad->SetBottomMargin(.15);
+      gPad->SetLogz(logarithmic);comparisons[panel]->SetMinimum(logarithmic ? .5:0.);
+      comparisons[panel]->SetMaximum(std::max(maximum,1.));comparisons[panel]->Draw("colz");
+      diagonals[panel]=TLine(.3,.3,.8,.8);diagonals[panel].SetLineColor(kRed);diagonals[panel].SetLineWidth(1);diagonals[panel].SetLineStyle(2);diagonals[panel].Draw("same");
+      Info("eta_momentum_comparison","mode %d panel %d: solution entries %.0f, no angular solution %lld, invalid %lld",mode,panel,comparisons[panel]->GetEntries(),noSolution[panel],invalid[panel]);
+    }
+    momentumCompareCanvas.Print(logarithmic ? momentumLogPdf:TString(outputPdf));momentumCompareCanvas.Clear();
+    }
+  }
+  momentumCompareCanvas.Print(momentumLogPdf+"]");
+  momentumCompareCanvas.Print(TString(outputPdf) + "]");
 }

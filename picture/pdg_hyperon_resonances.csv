@@ -1,0 +1,15 @@
+family,nominal,jp,mass,width,mass_low,mass_high,width_low,width_high,source,note
+Lambda,1520,3/2-,1519,16,1518,1520,15,17,https://pdg.lbl.gov/2025/tables/rpp2025-tab-baryons-Lambda.pdf,PDG estimate ranges
+Lambda,1600,1/2+,1600,200,1570,1630,150,250,https://pdg.lbl.gov/2025/tables/rpp2025-tab-baryons-Lambda.pdf,PDG estimate ranges
+Lambda,1670,1/2-,1674,30,1670,1678,25,35,https://pdg.lbl.gov/2025/tables/rpp2025-tab-baryons-Lambda.pdf,PDG estimate ranges
+Lambda,1690,3/2-,1690,70,1685,1695,60,80,https://pdg.lbl.gov/2025/tables/rpp2025-tab-baryons-Lambda.pdf,PDG estimate ranges
+Lambda,1710,1/2+,1713,180,1700,1726,138,222,https://pdg.lbl.gov/2025/listings/rpp2025-list-lambda-1710.pdf,ZHANG 13A single measurement; bounds are quoted +/- errors
+Lambda,1810,1/2+,1790,110,1740,1840,50,170,https://pdg.lbl.gov/2025/tables/rpp2025-tab-baryons-Lambda.pdf,PDG estimate ranges
+Lambda,1800,1/2-,1800,200,1750,1850,150,250,https://pdg.lbl.gov/2025/tables/rpp2025-tab-baryons-Lambda.pdf,PDG estimate ranges
+Sigma,1580,3/2-,1580,11,1580,1580,7,15,https://pdg.lbl.gov/2025/listings/rpp2025-list-sigma-1580.pdf,"Mass: PDG estimate; width: LITCHFIELD 74, 11 +/- 4 MeV; no PDG recommended width"
+Sigma,1620,1/2-,1620,70,1600,1650,40,100,https://pdg.lbl.gov/2025/listings/rpp2025-list-sigma-1620.pdf,PDG estimate ranges
+Sigma,1660,1/2+,1660,200,1640,1680,100,300,https://pdg.lbl.gov/2025/tables/rpp2025-tab-baryons-Sigma.pdf,PDG estimate ranges
+Sigma,1670,3/2-,1675,70,1665,1685,40,100,https://pdg.lbl.gov/2025/tables/rpp2025-tab-baryons-Sigma.pdf,PDG estimate ranges
+Sigma,1750,1/2-,1750,150,1700,1800,100,200,https://pdg.lbl.gov/2025/tables/rpp2025-tab-baryons-Sigma.pdf,PDG estimate ranges
+Sigma,1775,5/2-,1775,120,1770,1780,105,135,https://pdg.lbl.gov/2025/tables/rpp2025-tab-baryons-Sigma.pdf,PDG estimate ranges
+Sigma,1780,3/2+,1780,200,1730,1830,100,300,https://pdg.lbl.gov/2025/listings/rpp2025-list-sigma-1780-3o2-plus.pdf,PDG estimate ranges

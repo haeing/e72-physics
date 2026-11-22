@@ -58,7 +58,7 @@ const std::vector<Decay> kDecays = {
   {P::Lambda,    {P::Proton, P::PiMinus}},
   {P::Sigma0,    {P::Lambda, P::Gamma}},
   {P::SigmaPlus, {P::Proton, P::Pi0}},
-  {P::Eta,       {P::Pi0, P::Pi0, P::Pi0}}, // neutral mode only: eta -> 3 pi0 -> 6 gamma
+  {P::Eta,       {P::PiPlus, P::PiMinus, P::Pi0}}, // charged mode: eta -> pi+ pi- pi0
   {P::Pi0,       {P::Gamma, P::Gamma}},
 };
 constexpr double kBeamMomentumMeV = 735.;
@@ -68,7 +68,7 @@ constexpr UInt_t kSeed = 20261009;
 constexpr double kSigmaPlusLifetimeSec = .8018e-10;
 constexpr double kSpeedOfLightMmSec = 2.99792458e11;
 constexpr double kVertexRangeMm = 10.; // displayed range; tails retained in overflow
-constexpr bool kApplyResolution = true;
+constexpr bool kApplyResolution = false;
 constexpr bool kConstrainLambdaMass = true; // false: missing uses Pp + Ppi
 // Same magnitude-resolution prescription as lambda_missing_mass_resolution_study.cc.
 constexpr double kBeamSigma = .001, kProtonSigma = .040, kPionSigma = .040;
@@ -197,6 +197,10 @@ void DecayToFinal(Particle species, TLorentzVector four, int origin,
 struct MeasuredTrack { const Track* track; TLorentzVector four; };
 struct Histograms {
   Reaction reaction;
+  TGraph coloredPhase; // paired, deterministic subsample for colored lab-phase overlay
+  std::unique_ptr<TH1D> openingAngle, genuineOpeningAngle, wrongOpeningAngle;
+  std::unique_ptr<TH1D> exclusiveMissing, exclusiveMissingSquared;
+  Long64_t exclusiveCandidates=0, exclusiveNegativeM2=0;
   std::unique_ptr<TH1D> lambda, missing, selectedMissing, genuineLambda, wrongLambda;
   std::unique_ptr<TH2D> phase, correlation, massMomentum, massPionMomentum, missingPionMomentum;
   std::unique_ptr<TH1D> separation;
@@ -206,6 +210,23 @@ struct Histograms {
   std::array<std::unique_ptr<TH1D>,4> pionMomentum; // measured pi- tracks, once per pion
   Long64_t generated=0, candidates=0, genuine=0, negativeM2=0, invalidTracks=0;
   Histograms(const Reaction& r, int index): reaction(r) {
+    coloredPhase.SetName(Form("lx_colored_phase_%d",index));
+    coloredPhase.SetMarkerColorAlpha(r.color,.65);coloredPhase.SetMarkerStyle(7);coloredPhase.SetMarkerSize(.45);
+    exclusiveMissing.reset(new TH1D(Form("lx_exclusive_missing_%d",index),Form("%s: K^{-}p #rightarrow #Lambda#pi^{+}#pi^{-}X;M_{X} [GeV/c^{2}];Counts",r.name),400,0.,.4));
+    exclusiveMissingSquared.reset(new TH1D(Form("lx_exclusive_missing_squared_%d",index),Form("%s: K^{-}p #rightarrow #Lambda#pi^{+}#pi^{-}X;M_{X}^{2} [GeV^{2}/c^{4}];Counts",r.name),400,-.1,.1));
+    for(auto* plot:{exclusiveMissing.get(),exclusiveMissingSquared.get()}) {
+      plot->SetDirectory(nullptr);plot->Sumw2();plot->SetLineColor(r.color);plot->SetLineWidth(2);
+    }
+    openingAngle.reset(new TH1D(Form("lx_opening_angle_%d",index),
+      Form("%s: p-#pi^{-} lab opening angle;#theta_{p#pi^{-}}^{lab} [degree];Counts",r.name),180,0.,180.));
+    genuineOpeningAngle.reset(new TH1D(Form("lx_opening_genuine_%d",index),"",180,0.,180.));
+    wrongOpeningAngle.reset(new TH1D(Form("lx_opening_wrong_%d",index),"",180,0.,180.));
+    for(auto* plot:{openingAngle.get(),genuineOpeningAngle.get(),wrongOpeningAngle.get()}) {
+      plot->SetDirectory(nullptr);plot->Sumw2();plot->SetLineWidth(2);plot->GetYaxis()->SetTitleOffset(1.6);
+    }
+    openingAngle->SetLineColor(r.color);
+    genuineOpeningAngle->SetLineColor(kGreen+2);genuineOpeningAngle->SetLineStyle(2);
+    wrongOpeningAngle->SetLineColor(kMagenta+1);wrongOpeningAngle->SetLineStyle(3);
     lambda.reset(new TH1D(Form("lx_mass_%d",index),Form("%s: reconstructed #Lambda;M(p#pi^{-}) [GeV/c^{2}];%s",r.name,YieldAxis()),kMassBins,kLambdaAxisMin,kLambdaAxisMax));
     missing.reset(new TH1D(Form("lx_missing_%d",index),Form("%s: missing mass;M_{X} [GeV/c^{2}];%s",r.name,YieldAxis()),kMassBins,kMissingAxisMin,kMissingAxisMax));
     selectedMissing.reset(new TH1D(Form("lx_selected_missing_%d",index),Form("%s: selected missing mass;M_{X} [GeV/c^{2}];Counts",r.name),kMassBins,kMissingAxisMin,kMissingAxisMax));
@@ -213,7 +234,7 @@ struct Histograms {
     selectedMissing->GetYaxis()->SetTitleOffset(1.6);
     genuineLambda.reset(new TH1D(Form("lx_genuine_%d",index),"",kMassBins,kLambdaAxisMin,kLambdaAxisMax));
     wrongLambda.reset(new TH1D(Form("lx_wrong_%d",index),"",kMassBins,kLambdaAxisMin,kLambdaAxisMax));
-    phase.reset(new TH2D(Form("lx_phase_%d",index),Form("%s: p#pi^{-} candidate lab phase;#theta_{#Lambda}^{lab} [degree];p_{#Lambda}^{lab} [GeV/c]",r.name),180,0.,180.,200,0.,1.2));
+    phase.reset(new TH2D(Form("lx_phase_%d",index),Form("%s: p#pi^{-} candidate lab phase;#theta_{#Lambda}^{lab} [degree];p_{#Lambda}^{lab} [GeV/c]",r.name),180,0.,90.,200,0.,1.0));
     correlation.reset(new TH2D(Form("lx_correlation_%d",index),Form("%s: reconstructed masses;M_{X} [GeV/c^{2}];M(p#pi^{-}) [GeV/c^{2}]",r.name),300,kMissingAxisMin,kMissingAxisMax,300,kLambdaAxisMin,kLambdaAxisMax));
     massMomentum.reset(new TH2D(Form("lx_mass_momentum_%d",index),
       Form("%s: reconstructed #Lambda mass vs momentum;M(p#pi^{-}) [GeV/c^{2}];p_{#Lambda} [GeV/c]",r.name),
@@ -313,6 +334,16 @@ void phase_lambda_X(double beamMomentumMeV=lambda_x::kBeamMomentumMeV,
     "#Lambda#eta: both momentum solutions;p_{#Lambda}^{beam,#theta} [GeV/c];p_{#Lambda}^{p#pi^{-}} [GeV/c]",
     300,.3,.8,300,.3,.8));
   etaMomentumComparison->SetDirectory(nullptr);etaMomentumComparison->Sumw2();
+  auto etaLabCmTruth=std::unique_ptr<TH2D>(new TH2D("lx_eta_lab_cm_truth",
+    "#Lambda#eta: no resolution;#theta_{#Lambda}^{lab} [degree];cos#theta_{#Lambda}^{CM}",
+    360,0.,10.,300,-1.,1.));
+  auto etaLabCmReco=std::unique_ptr<TH2D>(new TH2D("lx_eta_lab_cm_reco",
+    "#Lambda#eta: with momentum resolution;#theta_{#Lambda}^{lab} [degree];cos#theta_{#Lambda}^{CM}",
+    360,0.,10.,300,-1.,1.));
+  for(auto* plot:{etaLabCmTruth.get(),etaLabCmReco.get()}) {
+    plot->SetDirectory(nullptr);plot->Sumw2();plot->GetZaxis()->SetTitle("");
+  }
+  Long64_t etaLabCmCandidates=0;
   Long64_t etaAngleCandidates=0,etaAngleNoSolution=0;
   std::vector<std::unique_ptr<Histograms>> histograms;
   for (std::size_t id=0; id<kReactions.size(); ++id) {
@@ -348,16 +379,16 @@ void phase_lambda_X(double beamMomentumMeV=lambda_x::kBeamMomentumMeV,
       const double measuredBeam=beam*(applyResolution ? random.Gaus(1.,kBeamSigma):1.)+kBeamOffsetMeV/1000.;
       if (measuredBeam<0.) { ++h.invalidTracks; continue; }
       const auto initialUsed=Four(TVector3(0.,0.,measuredBeam),kKaonMass)+target;
-      std::vector<MeasuredTrack> protons,pions;
+      std::vector<MeasuredTrack> protons,pions,positivePions;
       for (const auto& track:final) {
-        if (track.species!=P::Proton && track.species!=P::PiMinus) continue;
+        if (track.species!=P::Proton && track.species!=P::PiMinus && track.species!=P::PiPlus) continue;
         const bool proton=track.species==P::Proton;
         const double sigma=proton ? kProtonSigma:kPionSigma;
         const double offset=proton ? kProtonOffsetMeV:kPionOffsetMeV;
         const double magnitude=track.truth.P()*(applyResolution ? random.Gaus(1.,sigma):1.)+offset/1000.;
         if (magnitude<0.) { ++h.invalidTracks; continue; }
         MeasuredTrack measured{&track,Four(track.truth.Vect().Unit()*magnitude,Mass(track.species))};
-        (proton ? protons:pions).push_back(measured);
+        (proton ? protons : (track.species==P::PiPlus ? positivePions:pions)).push_back(measured);
       }
       // Fill once per measured proton, irrespective of the number of pion partners.
       for (const auto& proton:protons) {
@@ -371,24 +402,56 @@ void phase_lambda_X(double beamMomentumMeV=lambda_x::kBeamMomentumMeV,
           h.pionMomentum[component]->Fill(components[component],eventWeight);
       }
       for (const auto& proton:protons) for (const auto& pion:pions) {
-        ++h.candidates;
+        const bool lambdaEta=reaction.finalState.size()==2 &&
+          std::find(reaction.finalState.begin(),reaction.finalState.end(),P::Lambda)!=reaction.finalState.end() &&
+          std::find(reaction.finalState.begin(),reaction.finalState.end(),P::Eta)!=reaction.finalState.end();
         const bool genuine=proton.track->lambdaOrigin>0 &&
           proton.track->lambdaOrigin==pion.track->lambdaOrigin;
+        // Lambda eta: retain only the true p-pi Lambda decay combination.
+        if(lambdaEta && !genuine)continue;
+        ++h.candidates;
         h.genuine+=genuine;
         const auto lambda=proton.four+pion.four;
         const auto lambdaUsed=constrainLambdaMass ? Four(lambda.Vect(),kLambdaMass):lambda;
         const auto missing=initialUsed-lambdaUsed;
         const double weight=eventWeight;
-        const bool lambdaEta=reaction.finalState.size()==2 &&
-          std::find(reaction.finalState.begin(),reaction.finalState.end(),P::Lambda)!=reaction.finalState.end() &&
-          std::find(reaction.finalState.begin(),reaction.finalState.end(),P::Eta)!=reaction.finalState.end();
+        const double openingDeg=std::min(proton.four.Vect().Angle(pion.four.Vect())*180./std::acos(-1.),180.-1.e-12);
+        h.openingAngle->Fill(openingDeg,weight);
+        (genuine ? h.genuineOpeningAngle:h.wrongOpeningAngle)->Fill(openingDeg,weight);
+        for(const auto& pip:positivePions) for(const auto& pim:pions) {
+          if(pim.track==pion.track)continue; // Lambda daughter cannot be reused.
+          const auto exclusiveX=initialUsed-lambdaUsed-pip.four-pim.four;
+          const double m2=exclusiveX.M2();
+          ++h.exclusiveCandidates;h.exclusiveMissingSquared->Fill(m2,weight);
+          if(m2<0.)++h.exclusiveNegativeM2;
+          else h.exclusiveMissing->Fill(std::sqrt(m2),weight);
+          if(!applyResolution && !constrainLambdaMass && kBeamOffsetMeV==0. && kProtonOffsetMeV==0. && kPionOffsetMeV==0. &&
+             reaction.finalState.size()==3 && std::find(reaction.finalState.begin(),reaction.finalState.end(),P::Lambda)!=reaction.finalState.end() &&
+             std::abs(m2)>1.e-12)
+            throw std::runtime_error("Truth Lambda pi+ pi- exclusive missing mass does not close");
+        }
+        if(lambdaEta && genuine) {
+          // Genuine Lambda only: exclude the eta-decay pi- combinatorial candidate.
+          // CM polar axis is the incident kaon (+z); fixed target and collinear beam.
+          const auto trueLambda=proton.track->truth+pion.track->truth;
+          auto trueCm=trueLambda;trueCm.Boost(-initial.BoostVector());
+          auto measuredCm=lambdaUsed;measuredCm.Boost(-initialUsed.BoostVector());
+          etaLabCmTruth->Fill(trueLambda.Theta()*180./std::acos(-1.),
+            std::min(trueCm.CosTheta(),1.-1.e-12),weight);
+          etaLabCmReco->Fill(lambda.Theta()*180./std::acos(-1.),
+            std::min(measuredCm.CosTheta(),1.-1.e-12),weight);
+          ++etaLabCmCandidates;
+          if(!applyResolution && kBeamOffsetMeV==0. && kProtonOffsetMeV==0. && kPionOffsetMeV==0. &&
+             std::abs(trueCm.CosTheta()-measuredCm.CosTheta())>1.e-7)
+            throw std::runtime_error("Truth and reconstructed CM Lambda angles disagree");
+        }
         if(lambdaEta) {
           ++etaAngleCandidates;
           const auto solutions=EtaMomentumSolutions(measuredBeam,lambda.CosTheta());
           if(solutions.empty()) ++etaAngleNoSolution;
           else {
             for(double solution:solutions)etaMomentumComparison->Fill(solution,lambda.P(),weight);
-            if(!applyResolution && kBeamOffsetMeV==0. && kProtonOffsetMeV==0. && kPionOffsetMeV==0.) {
+            if(genuine && !applyResolution && kBeamOffsetMeV==0. && kProtonOffsetMeV==0. && kPionOffsetMeV==0.) {
               double closest=1.e100;for(double solution:solutions)closest=std::min(closest,std::abs(solution-lambda.P()));
               if(closest>1.e-7) throw std::runtime_error("Truth Lambda eta momentum matches neither angular solution");
             }
@@ -408,6 +471,9 @@ void phase_lambda_X(double beamMomentumMeV=lambda_x::kBeamMomentumMeV,
         h.massPionMomentum->Fill(lambda.M(),pion.four.P(),weight);
         (genuine ? h.genuineLambda:h.wrongLambda)->Fill(lambda.M(),weight);
         h.phase->Fill(std::min(lambda.Theta()*180./std::acos(-1.),180.-1.e-12),lambda.P(),weight);
+        // Sampling affects only the scatter display, never weighted histograms.
+        if(event%std::max(1,eventsPerReaction/3000)==0)
+          h.coloredPhase.SetPoint(h.coloredPhase.GetN(),lambda.Theta()*180./std::acos(-1.),lambda.P());
         if (!applyResolution && kProtonOffsetMeV==0. && kPionOffsetMeV==0. && genuine &&
             std::abs(lambda.M()-kLambdaMass)>1.e-8)
           throw std::runtime_error("Truth genuine Lambda mass closure failed");
@@ -426,6 +492,7 @@ void phase_lambda_X(double beamMomentumMeV=lambda_x::kBeamMomentumMeV,
     }
     Info("phase_lambda_X","%s: generated %lld, all p-pi- candidates %lld, genuine Lambda %lld, non-Lambda pairs %lld, negative Mmiss^2 %lld, invalid momenta %lld",
          reaction.name,h.generated,h.candidates,h.genuine,h.candidates-h.genuine,h.negativeM2,h.invalidTracks);
+    Info("exclusive_lambda_pipi","%s: distinct Lambda pi+ pi- combinations %lld; negative M_X^2 %lld",reaction.name,h.exclusiveCandidates,h.exclusiveNegativeM2);
     if (!h.candidates) Warning("phase_lambda_X","%s has no final p-pi- pairs with current decay configuration",reaction.name);
   }
   if (histograms.empty()) throw std::runtime_error("No enabled reaction is above threshold");
@@ -527,7 +594,7 @@ void phase_lambda_X(double beamMomentumMeV=lambda_x::kBeamMomentumMeV,
     canvas.Divide(2,2);
     TLegend pairLegend(.48,.67,.82,.88);pairLegend.SetBorderSize(0);pairLegend.SetFillStyle(0);pairLegend.SetTextSize(.032);
     canvas.cd(1);margins();h->lambda->Draw("hist");h->genuineLambda->Draw("hist same");h->wrongLambda->Draw("hist same");
-    pairLegend.AddEntry(h->lambda.get(),"All p#pi^{-}","l");pairLegend.AddEntry(h->genuineLambda.get(),"Same #Lambda decay","l");pairLegend.AddEntry(h->wrongLambda.get(),"Other pairing","l");pairLegend.Draw();
+    pairLegend.AddEntry(h->lambda.get(),"All p#pi^{-}","l");pairLegend.AddEntry(h->genuineLambda.get(),"Same #Lambda decay","l");if(h->wrongLambda->GetEntries()>0)pairLegend.AddEntry(h->wrongLambda.get(),"Other pairing","l");pairLegend.Draw();
     canvas.cd(2);margins();h->missing->Draw("hist");
     canvas.cd(3);margins();h->phase->Draw("colz");
     canvas.cd(4);margins();h->correlation->Draw("colz");
@@ -664,6 +731,57 @@ void phase_lambda_X(double beamMomentumMeV=lambda_x::kBeamMomentumMeV,
       canvas.Print(pdf);canvas.Clear();
     }
   }
+  // Exclusive recoil against Lambda AND the additional charged pion pair.
+  // Real M_X excludes negative M_X^2; the second plot retains those events.
+  for(int squared=0;squared<2;++squared) {
+    canvas.Divide(1,1);canvas.cd(1);margins();gPad->SetLogy(logarithmic);gPad->SetLogz(false);
+    TLegend exclusiveLegend(.55,.68,.88,.88);
+    exclusiveLegend.SetBorderSize(0);exclusiveLegend.SetFillStyle(0);exclusiveLegend.SetTextSize(.030);
+    bool first=true;
+    double maximum=0.;
+    for(auto& h:histograms) if(h->exclusiveCandidates)
+      maximum=std::max(maximum,(squared ? h->exclusiveMissingSquared:h->exclusiveMissing)->GetMaximum());
+    for(auto& h:histograms) {
+      if(!h->exclusiveCandidates)continue;
+      auto* plot=(squared ? h->exclusiveMissingSquared:h->exclusiveMissing).get();
+      setScale(plot);plot->SetMaximum(std::max(smallestWeight*10.,maximum*(logarithmic ? 2.:1.15)));
+      plot->Draw(first ? "hist":"hist same");first=false;
+      exclusiveLegend.AddEntry(plot,h->reaction.name,"l");
+    }
+    if(!first) {exclusiveLegend.Draw();canvas.Print(pdf);}
+    canvas.Clear();
+  }
+  if(etaLabCmCandidates) {
+    for(auto* plot:{etaLabCmTruth.get(),etaLabCmReco.get()}) {
+      canvas.Divide(1,1);canvas.cd(1);margins();gPad->SetLogy(false);gPad->SetLogz(logarithmic);
+      setScale(plot);plot->Draw("colz");canvas.Print(pdf);canvas.Clear();
+    }
+  }
+  // Lab opening angle of every reconstructed proton-pion candidate, before cuts.
+  for(auto& h:histograms) {
+    canvas.Divide(1,1);canvas.cd(1);margins();gPad->SetLogy(logarithmic);gPad->SetLogz(false);
+    for(auto* plot:{h->openingAngle.get(),h->genuineOpeningAngle.get(),h->wrongOpeningAngle.get()})setScale(plot);
+    h->openingAngle->Draw("hist");h->genuineOpeningAngle->Draw("hist same");h->wrongOpeningAngle->Draw("hist same");
+    TLegend openingLegend(.57,.68,.89,.88);
+    openingLegend.SetBorderSize(0);openingLegend.SetFillStyle(0);openingLegend.SetTextSize(.030);
+    openingLegend.AddEntry(h->openingAngle.get(),"All p#pi^{-}","l");
+    openingLegend.AddEntry(h->genuineOpeningAngle.get(),"Same #Lambda decay","l");
+    if(h->wrongOpeningAngle->GetEntries()>0)openingLegend.AddEntry(h->wrongOpeningAngle.get(),"Other pairing","l");
+    openingLegend.Draw();canvas.Print(pdf);canvas.Clear();
+  }
+  canvas.Divide(1,1);canvas.cd(1);margins();gPad->SetLogy(false);gPad->SetLogz(false);
+  auto* coloredFrame=gPad->DrawFrame(0.,0.,90.,1.);
+  coloredFrame->SetTitle(Form("Reactions: #Lambda lab phase (%s);#theta_{#Lambda}^{lab} [degree];p_{#Lambda}^{lab} [GeV/c]",applyResolution ? "with resolution":"no resolution"));
+  TLegend phaseLegend(.53,.54,.85,.88);
+  phaseLegend.SetBorderSize(0);phaseLegend.SetFillStyle(0);phaseLegend.SetTextSize(.025);
+  for(auto it=histograms.rbegin();it!=histograms.rend();++it)(*it)->coloredPhase.Draw("P same");
+  for(auto& h:histograms)phaseLegend.AddEntry(&h->coloredPhase,h->reaction.name,"p");
+  phaseLegend.Draw();canvas.Print(pdf);
+  if(!logarithmic) {
+    TString coloredPdf(outputPdf);if(coloredPdf.EndsWith(".pdf"))coloredPdf.Remove(coloredPdf.Length()-4);
+    coloredPdf+="_theta_momentum_by_reaction.pdf";canvas.Print(coloredPdf);
+  }
+  canvas.Clear();
   canvas.Print(pdf+"]");
   }
 }
